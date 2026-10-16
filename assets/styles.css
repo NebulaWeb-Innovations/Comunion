@@ -1,0 +1,12 @@
+:root{--background:40 33% 97%;--foreground:15 6% 13%;--card:0 0% 100%;--primary:346 57% 27%;--primary-foreground:40 33% 97%;--secondary:36 19% 92%;--muted:36 19% 92%;--muted-foreground:28 6% 43%;--accent:46 65% 48%;--accent-foreground:15 6% 13%;--border:36 19% 89%;--chart-3:197 37% 24%;--chart-4:43 74% 66%;--chart-5:27 87% 67%;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--background:20 10% 8%;--foreground:40 20% 92%;--card:20 10% 11%;--primary:346 57% 42%;--secondary:20 8% 18%;--muted:20 8% 18%;--muted-foreground:28 8% 62%;--accent:46 60% 55%;--accent-foreground:20 10% 8%;--border:20 8% 20%}}
+:root[data-theme="dark"]{--background:20 10% 8%;--foreground:40 20% 92%;--card:20 10% 11%;--primary:346 57% 42%;--secondary:20 8% 18%;--muted:20 8% 18%;--muted-foreground:28 8% 62%;--accent:46 60% 55%;--accent-foreground:20 10% 8%;--border:20 8% 20%}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{background:hsl(var(--background));color:hsl(var(--foreground));font-family:'Plus Jakarta Sans',system-ui,sans-serif}
+*{border-color:hsl(var(--border))}
+.prayer-glow{box-shadow:0 0 0 1px hsl(46 65% 48%/.35),0 0 18px 2px hsl(46 65% 48%/.28)}
+.prayer-glow-active{box-shadow:0 0 0 1px hsl(46 65% 48%/.7),0 0 26px 6px hsl(46 65% 48%/.45)}
+.gold-text{color:hsl(46 65% 38%)}
+:root[data-theme="dark"] .gold-text{color:hsl(46 60% 62%)}
+.bnav{padding-bottom:calc(.5rem + env(safe-area-inset-bottom,0px))}
+.fab{bottom:calc(5rem + env(safe-area-inset-bottom,0px))}
