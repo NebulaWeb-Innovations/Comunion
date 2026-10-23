@@ -6,6 +6,8 @@
 (() => {
   const root = document.documentElement;
   const file = location.pathname.split('/').pop() || 'index.html';
+  // En las páginas de acceso la guarda no hace nada: si no, se redirigiría a sí misma en bucle.
+  if (/^(login|registro)\.html$/.test(file)) return;
   const q = new URLSearchParams(location.search);
   const PAGE = /^(index|evangelio|santo)\.html$/;
   const DEEP = ['u', 'p', 'from', 'oracion', 'circulo'];
