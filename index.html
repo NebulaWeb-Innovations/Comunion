@@ -18,5 +18,26 @@
 <div id="app"></div>
 <script src="assets/guard.js"></script>
 <script src="assets/app.js"></script>
+<div id="perfil-usuario" class="perfil-container hidden">
+  <h2>Mi Perfil</h2>
+  
+  <div class="avatar-wrapper">
+    <!-- Imagen de perfil actual (por defecto o la de Google) -->
+    <img id="foto-perfil" src="assets/comunion-logo.png" alt="Foto de perfil">
+    
+    <!-- Botón superpuesto para cambiar foto -->
+    <button id="btn-cambiar-foto" class="btn-editar" aria-label="Cambiar foto de perfil">
+      📷 Cambiar Foto
+    </button>
+    
+    <!-- Input oculto para seleccionar el archivo -->
+    <input type="file" id="input-foto" accept="image/png, image/jpeg, image/jpg" style="display: none;">
+  </div>
+
+  <div class="info-usuario">
+    <p id="nombre-usuario">Cargando nombre...</p>
+    <p id="email-usuario">Cargando email...</p>
+  </div>
+</div>
 </body>
 </html>
