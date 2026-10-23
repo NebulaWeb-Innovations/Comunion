@@ -1,4 +1,55 @@
+document.addEventListener('DOMContentLoaded', () => {
+  const btnCambiarFoto = document.getElementById('btn-cambiar-foto');
+  const inputFoto = document.getElementById('input-foto');
+  const fotoPerfil = document.getElementById('foto-perfil');
 
+  // 1. Al hacer clic en el botón, simular un clic en el input de archivo oculto
+  if (btnCambiarFoto && inputFoto) {
+    btnCambiarFoto.addEventListener('click', () => {
+      inputFoto.click();
+    });
+  }
+
+  // 2. Escuchar cuando el usuario seleccione un archivo
+  if (inputFoto) {
+    inputFoto.addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      
+      if (file) {
+        // Validar que sea una imagen
+        if (!file.type.startsWith('image/')) {
+          alert('Por favor, selecciona un archivo de imagen válido.');
+          return;
+        }
+
+        // Leer el archivo localmente
+        const reader = new FileReader();
+        
+        reader.onload = (e) => {
+          // Actualizar la previsualización en el HTML
+          fotoPerfil.src = e.target.result;
+          
+          // NOTA SOBRE PERSISTENCIA:
+          // Aquí debes agregar la lógica para subir 'file' a tu base de datos o almacenamiento.
+          // Si estás usando Firebase (como en tu proyecto Ethos), aquí usarías Firebase Storage:
+          // subirImagenAFirebaseStorage(file);
+        };
+        
+        reader.readAsDataURL(file);
+      }
+    });
+  }
+});
+
+// Función de ejemplo para cargar datos básicos tras el login con Google
+function cargarDatosUsuario(usuarioAutenticado) {
+  document.getElementById('nombre-usuario').textContent = usuarioAutenticado.displayName || 'Usuario';
+  document.getElementById('email-usuario').textContent = usuarioAutenticado.email;
+  
+  if (usuarioAutenticado.photoURL) {
+    document.getElementById('foto-perfil').src = usuarioAutenticado.photoURL;
+  }
+}
 const dm=matchMedia('(prefers-color-scheme: dark)');
 const applyTheme=()=>document.documentElement.classList.toggle('dark',dm.matches);applyTheme();dm.addEventListener('change',applyTheme);
 
