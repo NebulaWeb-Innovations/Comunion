@@ -6,10 +6,13 @@
 // Firebase Console → Configuración del proyecto (⚙) → Tus apps → Configuración del SDK.
 // Estos valores son públicos por diseño: la seguridad la dan las reglas y los dominios autorizados.
 const firebaseConfig = {
-  apiKey: 'TU_API_KEY',
-  authDomain: 'TU_PROYECTO.firebaseapp.com',
-  projectId: 'TU_PROYECTO',
-  appId: 'TU_APP_ID'
+  apiKey: "AIzaSyACqpAlSGOkDEB85_LTUpXS3PWe7VAWWAE",
+  authDomain: "comunion-4fcf3.firebaseapp.com",
+  projectId: "comunion-4fcf3",
+  storageBucket: "comunion-4fcf3.firebasestorage.app",
+  messagingSenderId: "715720379264",
+  appId: "1:715720379264:web:bebd5adcc9284dd0e1cf65",
+  measurementId: "G-CR8WS35Q8H"
 };
 // ────────────────────────────────────────────────────────────────────────────────────────
 
