@@ -146,7 +146,7 @@ Object.assign(Auth, {
     img = img || '';
     if (img && (!/^data:image\/jpeg;base64,/.test(img) || img.length > 700000)) return { error: 'La imagen no es válida o es demasiado grande.' };
     if (!texto && !img) return { error: 'Escribe algo o agrega una imagen.' };
-    const d = { uid: u.uid, autor: u.displayName || Auth.profile?.nombre || 'Usuario', tipo, texto, img, ms: Date.now() };
+    const d = { uid: u.uid, autor: u.displayName || Auth.profile?.nombre || 'Usuario', tipo, texto, img, ms: Date.now(), likes: [], nCom: 0 };
     if (tipo === 'historia') d.expira = d.ms + 864e5;
     try {
       const r = await F.addDoc(F.collection(F.db, 'publicaciones'), { ...d, creado: F.serverTimestamp() });
@@ -169,6 +169,58 @@ Object.assign(Auth, {
   async remove(id) {
     if (!F) return NOCFG;
     try { await F.deleteDoc(F.doc(F.db, 'publicaciones', id)); return { ok: true }; } catch (e) { return fail(e); }
+  },
+
+  // ── Comunidad: publicaciones e intenciones de todos, me gusta y comentarios ──
+  async list(tipo) {
+    if (!F) return NOCFG;
+    try {
+      const s = await F.getDocs(F.query(F.collection(F.db, 'publicaciones'), F.where('tipo', '==', tipo)));
+      const items = s.docs.map(x => { const v = x.data(); return { id: x.id, uid: v.uid, autor: v.autor || 'Usuario', tipo: v.tipo, texto: v.texto || '', img: v.img || '', ms: v.ms || 0, likes: Array.isArray(v.likes) ? v.likes : [], nCom: v.nCom || 0 }; });
+      items.sort((a, b) => b.ms - a.ms);
+      return { items };
+    } catch (e) { return { ...fail(e), items: [] }; }
+  },
+
+  async like(id, on) {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { error: 'Inicia sesión primero.' };
+    try { await F.updateDoc(F.doc(F.db, 'publicaciones', id), { likes: on ? F.arrayUnion(u.uid) : F.arrayRemove(u.uid) }); return { ok: true }; }
+    catch (e) { return fail(e); }
+  },
+
+  async comments(id) {
+    if (!F) return NOCFG;
+    try {
+      const s = await F.getDocs(F.collection(F.db, 'publicaciones', id, 'comentarios'));
+      const items = s.docs.map(x => { const v = x.data(); return { id: x.id, uid: v.uid, autor: v.autor || 'Usuario', texto: v.texto || '', ms: v.ms || 0 }; });
+      items.sort((a, b) => a.ms - b.ms);
+      return { items };
+    } catch (e) { return { ...fail(e), items: [] }; }
+  },
+
+  async comment(id, texto) {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { error: 'Inicia sesión primero.' };
+    texto = String(texto || '').trim().slice(0, 300);
+    if (!texto) return { error: 'Escribe un comentario.' };
+    const d = { uid: u.uid, autor: u.displayName || Auth.profile?.nombre || 'Usuario', texto, ms: Date.now() };
+    try {
+      const r = await F.addDoc(F.collection(F.db, 'publicaciones', id, 'comentarios'), d);
+      F.updateDoc(F.doc(F.db, 'publicaciones', id), { nCom: F.increment(1) }).catch(() => {});
+      return { ok: true, item: { id: r.id, ...d } };
+    } catch (e) { return fail(e); }
+  },
+
+  async removeComment(id, cid) {
+    if (!F) return NOCFG;
+    try {
+      await F.deleteDoc(F.doc(F.db, 'publicaciones', id, 'comentarios', cid));
+      F.updateDoc(F.doc(F.db, 'publicaciones', id), { nCom: F.increment(-1) }).catch(() => {});
+      return { ok: true };
+    } catch (e) { return fail(e); }
   },
 
   async logout() { if (F) await F.signOut(F.auth); }
