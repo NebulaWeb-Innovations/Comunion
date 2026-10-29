@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Perfil de cada persona: cualquiera con sesión lo lee; solo su dueño lo escribe.
+    match /usuarios/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid
+        && (!('foto' in request.resource.data) || request.resource.data.foto.size() < 300000);
+    }
+
+    // Seguidores / seguidos: solo tú creas tus propias relaciones.
+    match /usuarios/{uid}/seguidores/{fid} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && request.auth.uid == fid && fid != uid;
+      allow delete: if request.auth != null && (request.auth.uid == fid || request.auth.uid == uid);
+    }
+    match /usuarios/{uid}/siguiendo/{tid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid && tid != uid;
+    }
+
+    // Notificaciones: cualquiera con sesión puede dejarte una; solo tú las lees y las marcas.
+    match /usuarios/{uid}/notifs/{nid} {
+      allow create: if request.auth != null && request.resource.data.de == request.auth.uid;
+      allow read, update, delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Publicaciones, historias e intenciones.
+    match /publicaciones/{id} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.tipo in ['post', 'intencion', 'historia']
+        && request.resource.data.texto.size() <= 500
+        && request.resource.data.img.size() <= 700000;
+      // Cualquier persona con sesión puede dar me gusta o comentar (solo cambian estos dos campos).
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'nCom']);
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+
+      match /comentarios/{cid} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.texto.size() > 0
+          && request.resource.data.texto.size() <= 300;
+        allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+      }
+    }
+  }
+}

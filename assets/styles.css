@@ -1,0 +1,71 @@
+:root{--background:40 33% 97%;--foreground:15 6% 13%;--card:0 0% 100%;--primary:346 57% 27%;--primary-foreground:40 33% 97%;--secondary:36 19% 92%;--muted:36 19% 92%;--muted-foreground:28 6% 43%;--accent:46 65% 48%;--accent-foreground:15 6% 13%;--border:36 19% 89%;--chart-3:197 37% 24%;--chart-4:43 74% 66%;--chart-5:27 87% 67%;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--background:20 10% 8%;--foreground:40 20% 92%;--card:20 10% 11%;--primary:346 57% 42%;--secondary:20 8% 18%;--muted:20 8% 18%;--muted-foreground:28 8% 62%;--accent:46 60% 55%;--accent-foreground:20 10% 8%;--border:20 8% 20%}}
+:root[data-theme="dark"]{--background:20 10% 8%;--foreground:40 20% 92%;--card:20 10% 11%;--primary:346 57% 42%;--secondary:20 8% 18%;--muted:20 8% 18%;--muted-foreground:28 8% 62%;--accent:46 60% 55%;--accent-foreground:20 10% 8%;--border:20 8% 20%}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{background:hsl(var(--background));color:hsl(var(--foreground));font-family:'Plus Jakarta Sans',system-ui,sans-serif}
+*{border-color:hsl(var(--border))}
+.prayer-glow{box-shadow:0 0 0 1px hsl(46 65% 48%/.35),0 0 18px 2px hsl(46 65% 48%/.28)}
+.prayer-glow-active{box-shadow:0 0 0 1px hsl(46 65% 48%/.7),0 0 26px 6px hsl(46 65% 48%/.45)}
+.gold-text{color:hsl(46 65% 38%)}
+:root[data-theme="dark"] .gold-text{color:hsl(46 60% 62%)}
+.bnav{padding-bottom:calc(.5rem + env(safe-area-inset-bottom,0px))}
+.fab{bottom:calc(5rem + env(safe-area-inset-bottom,0px))}
+.perfil-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+}
+
+.avatar-wrapper {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 3px solid #ccc; /* Ajusta al color de tu tema */
+}
+
+#foto-perfil {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 0.3s ease;
+}
+
+.btn-editar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  border: none;
+  padding: 10px 0;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* Mostrar el botón al pasar el mouse por encima (PC) */
+.avatar-wrapper:hover #foto-perfil {
+  opacity: 0.7;
+}
+.avatar-wrapper:hover .btn-editar {
+  opacity: 1;
+}
+
+/* En móviles, puedes mantener el botón siempre ligeramente visible o ajustarlo con media queries */
+@media (max-width: 768px) {
+  .btn-editar {
+    opacity: 0.8;
+  }
+}
+
+/* Campanita de notificaciones y manita de oraciones iluminada */
+@keyframes campana{0%,60%,100%{transform:rotate(0)}10%{transform:rotate(16deg)}20%{transform:rotate(-14deg)}30%{transform:rotate(10deg)}40%{transform:rotate(-8deg)}50%{transform:rotate(4deg)}}
+.bell-wiggle{display:inline-flex;transform-origin:50% 10%;animation:campana 2.2s ease-in-out infinite}
+@keyframes brillo{0%,100%{filter:drop-shadow(0 0 2px hsl(46 65% 48%/.6))}50%{filter:drop-shadow(0 0 9px hsl(46 65% 48%))}}
+.pf-glow{color:hsl(46 65% 48%)!important;animation:brillo 1.4s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.bell-wiggle,.pf-glow{animation:none}}

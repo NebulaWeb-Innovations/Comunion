@@ -1,0 +1,324 @@
+// Comunión · Autenticación con Firebase (correo, Google y Apple) + perfil en Firestore.
+// Expone window.Auth para login.html, registro.html y assets/guard.js.
+// Guárdalo como assets/auth.js
+
+// ─── 1) PEGA AQUÍ LA CONFIGURACIÓN DE TU APP WEB DE FIREBASE ───────────────────────────
+// Firebase Console → Configuración del proyecto (⚙) → Tus apps → Configuración del SDK.
+// Estos valores son públicos por diseño: la seguridad la dan las reglas y los dominios autorizados.
+const firebaseConfig = {
+  apiKey: "AIzaSyACqpAlSGOkDEB85_LTUpXS3PWe7VAWWAE",
+  authDomain: "comunion-4fcf3.firebaseapp.com",
+  projectId: "comunion-4fcf3",
+  storageBucket: "comunion-4fcf3.firebasestorage.app",
+  messagingSenderId: "715720379264",
+  appId: "1:715720379264:web:bebd5adcc9284dd0e1cf65",
+  measurementId: "G-CR8WS35Q8H"
+};
+// ────────────────────────────────────────────────────────────────────────────────────────
+
+const V = 'https://www.gstatic.com/firebasejs/10.14.1/';
+const COLLECTION = 'usuarios';
+const TIPOS = ['laico', 'sacerdote', 'religioso'];
+const configured = !!firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('TU_');
+
+// Estado público. "user" solo se asigna cuando el perfil ya se cargó.
+const Auth = { configured, ready: false, user: null, profile: null };
+window.Auth = Auth;
+const ping = () => window.dispatchEvent(new CustomEvent('authchange'));
+
+const MSG = {
+  'auth/invalid-credential': 'Correo o contraseña incorrectos.',
+  'auth/wrong-password': 'Correo o contraseña incorrectos.',
+  'auth/user-not-found': 'Correo o contraseña incorrectos.',
+  'auth/email-already-in-use': 'Ese correo ya tiene una cuenta. Inicia sesión.',
+  'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
+  'auth/invalid-email': 'El correo no es válido.',
+  'auth/too-many-requests': 'Demasiados intentos. Inténtalo de nuevo más tarde.',
+  'auth/network-request-failed': 'Sin conexión. Revisa tu internet e inténtalo de nuevo.',
+  'auth/popup-closed-by-user': 'Cerraste la ventana antes de terminar.',
+  'auth/cancelled-popup-request': 'Cerraste la ventana antes de terminar.',
+  'auth/unauthorized-domain': 'Este dominio no está autorizado en Firebase (Authentication → Configuración → Dominios autorizados).',
+  'auth/operation-not-allowed': 'Este método de acceso no está activado en Firebase.',
+  'auth/account-exists-with-different-credential': 'Ese correo ya está registrado con otro método de acceso.',
+  'permission-denied': 'Firebase rechazó el guardado. Revisa las reglas de Firestore.'
+};
+const fail = e => ({ error: MSG[e?.code] || 'No pudimos completar la acción. Inténtalo de nuevo.' });
+const NOCFG = { error: 'Firebase todavía no está configurado en assets/auth.js.' };
+
+let F = null;       // SDK de Firebase ya cargado
+let hold = false;   // pausa la sincronización mientras se crea una cuenta
+
+async function sync(u) {
+  if (hold) return;
+  let profile = null;
+  if (u) {
+    try {
+      const s = await F.getDoc(F.doc(F.db, COLLECTION, u.uid));
+      profile = s.exists() ? s.data() : null;
+    } catch (e) { console.warn('Comunión: no se pudo leer el perfil', e); }
+  }
+  Auth.profile = profile;
+  Auth.user = u ? { uid: u.uid, email: u.email || '', nombre: u.displayName || '', photo: u.photoURL || '', emailVerified: u.emailVerified } : null;
+  Auth.ready = true;
+  ping();
+}
+
+async function init() {
+  if (!configured) { Auth.ready = true; return ping(); }
+  try {
+    const [app, au, fs] = await Promise.all([import(V + 'firebase-app.js'), import(V + 'firebase-auth.js'), import(V + 'firebase-firestore.js')]);
+    const a = app.initializeApp(firebaseConfig);
+    F = { ...au, ...fs, auth: au.getAuth(a), db: fs.getFirestore(a) };
+    F.onAuthStateChanged(F.auth, sync);
+  } catch (e) {
+    console.error('Comunión: no se pudo cargar Firebase', e);
+    Auth.ready = true; ping();
+  }
+}
+
+const mapPub = x => { const v = x.data(); return { id: x.id, uid: v.uid, autor: v.autor || 'Usuario', tipo: v.tipo, texto: v.texto || '', img: v.img || '', ms: v.ms || 0, expira: v.expira || 0, likes: Array.isArray(v.likes) ? v.likes : [], nCom: v.nCom || 0, cat: v.cat || '', catTxt: v.catTxt || '' }; };
+const CATS = ['gratitud', 'familia', 'sanacion', 'vocacion', 'otros'];
+
+Object.assign(Auth, {
+  async login(email, password) {
+    if (!F) return NOCFG;
+    try { await F.signInWithEmailAndPassword(F.auth, email, password); return { ok: true }; } catch (e) { return fail(e); }
+  },
+
+  async register(nombre, email, password) {
+    if (!F) return NOCFG;
+    hold = true;
+    try {
+      const c = await F.createUserWithEmailAndPassword(F.auth, email, password);
+      await F.updateProfile(c.user, { displayName: nombre });
+      F.sendEmailVerification(c.user).catch(() => {});
+      return { ok: true };
+    } catch (e) { return fail(e); }
+    finally { hold = false; await sync(F.auth.currentUser); }
+  },
+
+  async social(kind) {
+    if (!F) return NOCFG;
+    const p = kind === 'apple' ? new F.OAuthProvider('apple.com') : new F.GoogleAuthProvider();
+    if (kind === 'apple') { p.addScope('email'); p.addScope('name'); }
+    try { await F.signInWithPopup(F.auth, p); return { ok: true }; }
+    catch (e) {
+      if (e.code === 'auth/popup-blocked') { await F.signInWithRedirect(F.auth, p); return { ok: true }; }
+      return fail(e);
+    }
+  },
+
+  async reset(email) {
+    if (!F) return NOCFG;
+    try { await F.sendPasswordResetEmail(F.auth, email); } catch (e) { if (e.code !== 'auth/user-not-found') return fail(e); }
+    return { ok: true }; // misma respuesta exista o no el correo
+  },
+
+  async saveProfile({ tipo, nacimiento }) {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { error: 'Inicia sesión para guardar tu perfil.' };
+    if (!TIPOS.includes(tipo) || !/^\d{4}-\d{2}-\d{2}$/.test(nacimiento || '')) return { error: 'Los datos del perfil no son válidos.' };
+    try {
+      await F.setDoc(F.doc(F.db, COLLECTION, u.uid), { nombre: u.displayName || '', email: u.email || '', tipo, nacimiento, creado: F.serverTimestamp() }, { merge: true });
+      Auth.profile = { nombre: u.displayName || '', email: u.email || '', tipo, nacimiento };
+      ping();
+      return { ok: true };
+    } catch (e) { return fail(e); }
+  },
+
+  // ── Perfil: foto, publicaciones, historias e intenciones (se guardan en Firestore) ──
+  async setPhoto(dataUrl) {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { error: 'Inicia sesión primero.' };
+    if (typeof dataUrl !== 'string' || !/^data:image\/jpeg;base64,/.test(dataUrl) || dataUrl.length > 300000) return { error: 'La imagen no es válida o es demasiado grande.' };
+    try {
+      await F.setDoc(F.doc(F.db, COLLECTION, u.uid), { foto: dataUrl }, { merge: true });
+      Auth.profile = { ...(Auth.profile || {}), foto: dataUrl };
+      return { ok: true };
+    } catch (e) { return fail(e); }
+  },
+
+  async publish({ tipo, texto, img, cat, catTxt }) {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { error: 'Inicia sesión primero.' };
+    if (!['post', 'intencion', 'historia'].includes(tipo)) return { error: 'Tipo de publicación no válido.' };
+    texto = String(texto || '').trim().slice(0, 500);
+    img = img || '';
+    if (img && (!/^data:image\/jpeg;base64,/.test(img) || img.length > 700000)) return { error: 'La imagen no es válida o es demasiado grande.' };
+    if (!texto && !img) return { error: 'Escribe algo o agrega una imagen.' };
+    const d = { uid: u.uid, autor: u.displayName || Auth.profile?.nombre || 'Usuario', tipo, texto, img, ms: Date.now(), likes: [], nCom: 0 };
+    if (tipo === 'historia') d.expira = d.ms + 864e5;
+    if (tipo === 'intencion') {
+      if (!CATS.includes(cat)) return { error: 'Elige el tipo de intención.' };
+      d.cat = cat;
+      if (cat === 'otros') {
+        catTxt = String(catTxt || '').trim().slice(0, 30);
+        if (!catTxt) return { error: 'Escribe el tipo de intención.' };
+        d.catTxt = catTxt;
+      }
+    }
+    try {
+      const r = await F.addDoc(F.collection(F.db, 'publicaciones'), { ...d, creado: F.serverTimestamp() });
+      return { ok: true, item: { id: r.id, ...d } };
+    } catch (e) { return fail(e); }
+  },
+
+  async mine(uid) {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { items: [] };
+    try {
+      const s = await F.getDocs(F.query(F.collection(F.db, 'publicaciones'), F.where('uid', '==', uid || u.uid)));
+      const items = s.docs.map(mapPub);
+      items.sort((a, b) => b.ms - a.ms);
+      return { items };
+    } catch (e) { return { ...fail(e), items: [] }; }
+  },
+
+  async remove(id) {
+    if (!F) return NOCFG;
+    try { await F.deleteDoc(F.doc(F.db, 'publicaciones', id)); return { ok: true }; } catch (e) { return fail(e); }
+  },
+
+  // ── Comunidad: publicaciones e intenciones de todos, me gusta y comentarios ──
+  async list(tipo) {
+    if (!F) return NOCFG;
+    try {
+      const s = await F.getDocs(F.query(F.collection(F.db, 'publicaciones'), F.where('tipo', '==', tipo)));
+      const items = s.docs.map(mapPub);
+      items.sort((a, b) => b.ms - a.ms);
+      return { items };
+    } catch (e) { return { ...fail(e), items: [] }; }
+  },
+
+  async like(id, on) {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { error: 'Inicia sesión primero.' };
+    try { await F.updateDoc(F.doc(F.db, 'publicaciones', id), { likes: on ? F.arrayUnion(u.uid) : F.arrayRemove(u.uid) }); return { ok: true }; }
+    catch (e) { return fail(e); }
+  },
+
+  async comments(id) {
+    if (!F) return NOCFG;
+    try {
+      const s = await F.getDocs(F.collection(F.db, 'publicaciones', id, 'comentarios'));
+      const items = s.docs.map(x => { const v = x.data(); return { id: x.id, uid: v.uid, autor: v.autor || 'Usuario', texto: v.texto || '', ms: v.ms || 0 }; });
+      items.sort((a, b) => a.ms - b.ms);
+      return { items };
+    } catch (e) { return { ...fail(e), items: [] }; }
+  },
+
+  async comment(id, texto) {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { error: 'Inicia sesión primero.' };
+    texto = String(texto || '').trim().slice(0, 300);
+    if (!texto) return { error: 'Escribe un comentario.' };
+    const d = { uid: u.uid, autor: u.displayName || Auth.profile?.nombre || 'Usuario', texto, ms: Date.now() };
+    try {
+      const r = await F.addDoc(F.collection(F.db, 'publicaciones', id, 'comentarios'), d);
+      F.updateDoc(F.doc(F.db, 'publicaciones', id), { nCom: F.increment(1) }).catch(() => {});
+      return { ok: true, item: { id: r.id, ...d } };
+    } catch (e) { return fail(e); }
+  },
+
+  async removeComment(id, cid) {
+    if (!F) return NOCFG;
+    try {
+      await F.deleteDoc(F.doc(F.db, 'publicaciones', id, 'comentarios', cid));
+      F.updateDoc(F.doc(F.db, 'publicaciones', id), { nCom: F.increment(-1) }).catch(() => {});
+      return { ok: true };
+    } catch (e) { return fail(e); }
+  },
+
+  // ── Perfiles ajenos, seguidores y notificaciones ──
+  async userInfo(uid) {
+    if (!F) return {};
+    try {
+      const s = await F.getDoc(F.doc(F.db, COLLECTION, uid));
+      const v = s.exists() ? s.data() : {};
+      return { nombre: v.nombre || '', foto: v.foto || '', fotoG: v.fotoG || '', tipo: v.tipo || '' };
+    } catch (e) { return {}; }
+  },
+
+  async follows(uid) {
+    if (!F) return { seg: [], sig: [] };
+    const rd = async sub => {
+      try {
+        const s = await F.getDocs(F.collection(F.db, COLLECTION, uid, sub));
+        return s.docs.map(x => ({ uid: x.id, nombre: x.data().nombre || '', ms: x.data().ms || 0 }));
+      } catch (e) { return []; }
+    };
+    const [seg, sig] = await Promise.all([rd('seguidores'), rd('siguiendo')]);
+    return { seg, sig };
+  },
+
+  async follow(target, nombreTarget, on) {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { error: 'Inicia sesión primero.' };
+    if (u.uid === target) return { error: 'No puedes seguirte a ti mismo.' };
+    const yo = u.displayName || Auth.profile?.nombre || 'Usuario', ms = Date.now();
+    try {
+      const a = F.doc(F.db, COLLECTION, target, 'seguidores', u.uid), b = F.doc(F.db, COLLECTION, u.uid, 'siguiendo', target);
+      if (on) {
+        await F.setDoc(a, { nombre: yo, ms });
+        await F.setDoc(b, { nombre: String(nombreTarget || 'Usuario').slice(0, 60), ms });
+        Auth.notify(target, { tipo: 'follow' });
+      } else { await F.deleteDoc(a); await F.deleteDoc(b); }
+      return { ok: true };
+    } catch (e) { return fail(e); }
+  },
+
+  async notify(to, { tipo, post }) {
+    if (!F || !to) return;
+    const u = F.auth.currentUser;
+    if (!u || to === u.uid) return;
+    try {
+      await F.addDoc(F.collection(F.db, COLLECTION, to, 'notifs'), { tipo, de: u.uid, nombre: u.displayName || Auth.profile?.nombre || 'Usuario', post: post || '', ms: Date.now(), leido: false });
+    } catch (e) { /* una notificación fallida no debe romper la acción */ }
+  },
+
+  watchNotifs(cb) {
+    const u = F && F.auth.currentUser;
+    if (!u) return () => {};
+    return F.onSnapshot(F.collection(F.db, COLLECTION, u.uid, 'notifs'), s => {
+      const items = s.docs.map(x => { const v = x.data(); return { id: x.id, tipo: v.tipo, de: v.de, nombre: v.nombre || 'Usuario', post: v.post || '', ms: v.ms || 0, leido: !!v.leido }; });
+      items.sort((a, b) => b.ms - a.ms);
+      cb(items.slice(0, 40));
+    }, () => {});
+  },
+
+  async markRead(ids) {
+    const u = F && F.auth.currentUser;
+    if (!u) return;
+    await Promise.all(ids.map(id => F.updateDoc(F.doc(F.db, COLLECTION, u.uid, 'notifs', id), { leido: true }).catch(() => {})));
+  },
+
+  watchWall(cb) {
+    if (!F) return () => {};
+    return F.onSnapshot(F.query(F.collection(F.db, 'publicaciones'), F.where('tipo', '==', 'intencion')), s => {
+      const items = s.docs.map(mapPub);
+      items.sort((a, b) => b.ms - a.ms);
+      cb(items);
+    }, () => {});
+  },
+
+  // Guarda la foto de Google en tu perfil para que otras personas la vean (solo si ya completaste el registro).
+  async syncFotoG() {
+    const u = F && F.auth.currentUser;
+    if (!u || !u.photoURL || !Auth.profile || !Auth.profile.tipo || Auth.profile.fotoG === u.photoURL) return;
+    try {
+      await F.setDoc(F.doc(F.db, COLLECTION, u.uid), { fotoG: u.photoURL }, { merge: true });
+      Auth.profile = { ...Auth.profile, fotoG: u.photoURL };
+    } catch (e) { /* no es crítico */ }
+  },
+
+  async logout() { if (F) await F.signOut(F.auth); }
+});
+
+init();
