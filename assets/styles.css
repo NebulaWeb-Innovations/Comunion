@@ -62,6 +62,7 @@ body{background:hsl(var(--background));color:hsl(var(--foreground));font-family:
     opacity: 0.8;
   }
 }
+<<<<<<< HEAD
 
 /* Campanita de notificaciones y manita de oraciones iluminada */
 @keyframes campana{0%,60%,100%{transform:rotate(0)}10%{transform:rotate(16deg)}20%{transform:rotate(-14deg)}30%{transform:rotate(10deg)}40%{transform:rotate(-8deg)}50%{transform:rotate(4deg)}}
@@ -69,3 +70,5 @@ body{background:hsl(var(--background));color:hsl(var(--foreground));font-family:
 @keyframes brillo{0%,100%{filter:drop-shadow(0 0 2px hsl(46 65% 48%/.6))}50%{filter:drop-shadow(0 0 9px hsl(46 65% 48%))}}
 .pf-glow{color:hsl(46 65% 48%)!important;animation:brillo 1.4s ease-in-out infinite}
 @media (prefers-reduced-motion:reduce){.bell-wiggle,.pf-glow{animation:none}}
+=======
+>>>>>>> 923b14d44f86e58d9dd5a2196eaabaa86e4306c8

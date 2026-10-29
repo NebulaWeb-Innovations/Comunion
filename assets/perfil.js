@@ -26,7 +26,7 @@
   const avatar = (uid, nombre, cls, big) => {
     const me = (A() || {}).user, u = PF.users[uid] || {};
     let f = '';
-    if (me && uid === me.uid) f = safeImg((A().profile || {}).foto) || (/^https:\/\//.test(me.photo || '') ? me.photo : '');
+    if (me && uid === me.uid) f = safeImg(u.foto) || safeImg((A().profile || {}).foto) || (/^https:\/\//.test(me.photo || '') ? me.photo : '');
     else f = safeImg(u.foto);
     if (!f && /^https:\/\//.test(u.fotoG || '')) f = u.fotoG;
     return f ? `<img src="${esc(f)}" alt="" referrerpolicy="no-referrer" class="${cls} rounded-full object-cover shrink-0">`
@@ -37,6 +37,7 @@
     return okId(uid) ? `<a href="#${me && uid === me.uid ? 'perfil' : 'u-' + uid}" data-pf="irperfil" class="font-semibold hover:underline">${esc(nombre)}</a>` : `<span class="font-semibold">${esc(nombre)}</span>`;
   };
   PF.who = who;
+  PF.avatar = avatar;
   const statsRow = (np, ns, ng, w) => `<div class="grid grid-cols-3 gap-3 mt-4">${[['Publicaciones', np, ''], ['Seguidores', ns, 'seg'], ['Seguidos', ng, 'sig']].map(([l, n, k]) => {
     const tag = k ? 'button' : 'div', at = k ? ` data-pf="lista" data-k="${k}" data-w="${w}"` : '';
     return `<${tag}${at} class="bg-card rounded-2xl border p-4 text-center"><p class="font-display text-3xl gold-text">${n}</p><p class="text-xs text-muted-foreground mt-1">${l}</p></${tag}>`;
@@ -78,9 +79,9 @@
     stop(); PF.sub = a.user.uid;
     PF.unsub = [
       a.watchNotifs(l => { PF.notifs = l; PF.loadUsers(l.map(n => n.de)); upd(); }),
-      a.watchWall(l => { PF.wall = l; wallCheck(); upd(); })
+      a.watchWall(l => { PF.wall = l; wallCheck(); PF.loadUsers(l.map(i => i.uid)); upd(); })
     ];
-    a.syncFotoG();
+    a.syncPublic().then(() => a.userInfo(a.user.uid)).then(i => { PF.users[a.user.uid] = i; upd(); });
     a.follows(a.user.uid).then(f => { PF.fol = f; upd(); });
   }
 
@@ -108,6 +109,18 @@
   const boot = () => { start(); PF.load(); };
   addEventListener('authchange', boot);
   if (A() && A().ready) boot();
+
+  // Unirse en oración: se guarda en la intención y se avisa a quien la publicó
+  PF.join = async (id, autorUid) => {
+    const a = A(), me = a && a.user;
+    if (!me) return { error: 'Inicia sesión primero.' };
+    const it = PF.wall.find(x => x.id === id);
+    if (it && !(it.oran || []).includes(me.uid)) it.oran = [...(it.oran || []), me.uid];
+    const r = await a.join(id, true);
+    if (r.ok) a.notify(autorUid, { tipo: 'oracion', post: id });
+    else if (it) it.oran = (it.oran || []).filter(x => x !== me.uid);
+    return r;
+  };
 
   PF.add = async (tipo, texto, img, extra) => {
     const r = await A().publish({ tipo, texto, img, ...(extra || {}) });
@@ -148,8 +161,8 @@
     const a = A() || {}, u = a.user, p = a.profile || {};
     const wrap = body => `<div class="flex-1 min-w-0 flex justify-center"><div class="w-full max-w-2xl px-4 py-6 lg:py-10 pb-24 lg:pb-10">${body}</div></div>`;
     if (!u) return wrap('<p class="text-sm text-muted-foreground text-center">Inicia sesión para ver tu perfil.</p>');
-    const nombre = u.nombre || p.nombre || 'Usuario';
-    const foto = safeImg(p.foto) || (/^https:\/\//.test(u.photo || '') ? u.photo : '');
+    const nombre = u.nombre || p.nombre || (u.email || '').split('@')[0] || 'Usuario';
+    const foto = safeImg((PF.users[u.uid] || {}).foto) || safeImg(p.foto) || (/^https:\/\//.test(u.photo || '') ? u.photo : '');
     const now = Date.now();
     const posts = PF.items.filter(i => i.tipo === 'post');
     const ints = PF.items.filter(i => i.tipo === 'intencion');
@@ -201,7 +214,7 @@
     if (!me) return wrap('<p class="text-sm text-muted-foreground text-center">Inicia sesión para ver este perfil.</p>');
     const volver = '<a href="#inicio" class="text-sm text-muted-foreground">← Volver al inicio</a>';
     if (!vu || !vu.loaded) return wrap(volver + '<p class="text-sm text-muted-foreground mt-6 text-center">Cargando perfil…</p>');
-    const nombre = (vu.info && vu.info.nombre) || (vu.items[0] && vu.items[0].autor) || 'Usuario';
+    const nombre = (vu.info && vu.info.nombre) || (vu.items[0] && vu.items[0].autor) || ((PF.fol.sig.find(x => x.uid === vu.uid) || vu.seg.find(x => x.uid === vu.uid) || {}).nombre) || 'Usuario';
     const posts = vu.items.filter(i => i.tipo === 'post');
     const sigo = vu.seg.some(x => x.uid === me.uid);
     return wrap(`${volver}
@@ -227,7 +240,7 @@
     const a = A();
     if (!a || !a.user) return '';
     const n = PF.notifs.filter(x => !x.leido).length;
-    const TXT = { follow: 'empezó a seguirte', comment: 'comentó tu publicación', reply: 'respondió en una publicación donde comentaste' };
+    const TXT = { follow: 'empezó a seguirte', comment: 'comentó tu publicación', oracion: 'se unió en oración a tu intención', reply: 'respondió en una publicación donde comentaste' };
     const panel = PF.bellOpen ? `<div class="absolute right-0 mt-2 w-80 max-w-[calc(100vw-1.5rem)] bg-card border rounded-2xl shadow-xl max-h-[70vh] overflow-y-auto">
         <p class="font-display text-lg px-4 py-3 border-b">Notificaciones</p>
         ${PF.notifs.length ? PF.notifs.map(x => `<div class="flex items-center gap-3 px-4 py-3 border-b ${x.leido ? '' : 'bg-primary/5'}">${avatar(x.de, x.nombre, 'w-9 h-9')}<p class="text-sm flex-1 min-w-0">${who(x.de, x.nombre)} ${esc(TXT[x.tipo] || '')}</p><span class="text-xs text-muted-foreground shrink-0">${rel(x.ms)}</span></div>`).join('') : '<p class="text-sm text-muted-foreground px-4 py-6 text-center">No tienes notificaciones.</p>'}
@@ -313,7 +326,7 @@
         let r;
         if (kind === 'foto') {
           r = await A().setPhoto(data);
-          if (r.ok) { say('Foto actualizada'); upd(); }
+          if (r.ok) { PF.users[A().user.uid] = { ...(PF.users[A().user.uid] || {}), foto: data }; say('Foto actualizada'); upd(); }
         } else {
           r = await PF.add(kind === 'post' ? 'post' : 'historia', texto, data);
           if (r.ok) say(kind === 'post' ? 'Publicación subida' : 'Historia subida (dura 24 h)');
@@ -418,7 +431,7 @@
       const nombre = (vu.info && vu.info.nombre) || (vu.items[0] && vu.items[0].autor) || 'Usuario';
       const on = !vu.seg.some(x => x.uid === yo.uid);
       const antes = [vu.seg, PF.fol.sig];
-      vu.seg = on ? [...vu.seg, { uid: yo.uid, nombre: yo.nombre || 'Usuario', ms: Date.now() }] : vu.seg.filter(x => x.uid !== yo.uid);
+      vu.seg = on ? [...vu.seg, { uid: yo.uid, nombre: yo.nombre || (yo.email || '').split('@')[0] || 'Usuario', ms: Date.now() }] : vu.seg.filter(x => x.uid !== yo.uid);
       PF.fol.sig = on ? [...PF.fol.sig, { uid: vu.uid, nombre, ms: Date.now() }] : PF.fol.sig.filter(x => x.uid !== vu.uid);
       upd();
       const r = await A().follow(vu.uid, nombre, on);

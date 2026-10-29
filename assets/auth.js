@@ -76,7 +76,8 @@ async function init() {
   }
 }
 
-const mapPub = x => { const v = x.data(); return { id: x.id, uid: v.uid, autor: v.autor || 'Usuario', tipo: v.tipo, texto: v.texto || '', img: v.img || '', ms: v.ms || 0, expira: v.expira || 0, likes: Array.isArray(v.likes) ? v.likes : [], nCom: v.nCom || 0, cat: v.cat || '', catTxt: v.catTxt || '' }; };
+const mapPub = x => { const v = x.data(); return { id: x.id, uid: v.uid, autor: v.autor || 'Usuario', tipo: v.tipo, texto: v.texto || '', img: v.img || '', ms: v.ms || 0, expira: v.expira || 0, likes: Array.isArray(v.likes) ? v.likes : [], nCom: v.nCom || 0, oran: Array.isArray(v.oran) ? v.oran : [], cat: v.cat || '', catTxt: v.catTxt || '' }; };
+const myName = u => u.displayName || Auth.profile?.nombre || (u.email || '').split('@')[0] || 'Usuario';
 const CATS = ['gratitud', 'familia', 'sanacion', 'vocacion', 'otros'];
 
 Object.assign(Auth, {
@@ -134,8 +135,7 @@ Object.assign(Auth, {
     if (!u) return { error: 'Inicia sesión primero.' };
     if (typeof dataUrl !== 'string' || !/^data:image\/jpeg;base64,/.test(dataUrl) || dataUrl.length > 300000) return { error: 'La imagen no es válida o es demasiado grande.' };
     try {
-      await F.setDoc(F.doc(F.db, COLLECTION, u.uid), { foto: dataUrl }, { merge: true });
-      Auth.profile = { ...(Auth.profile || {}), foto: dataUrl };
+      await F.setDoc(F.doc(F.db, 'publico', u.uid), { foto: dataUrl }, { merge: true });
       return { ok: true };
     } catch (e) { return fail(e); }
   },
@@ -149,7 +149,7 @@ Object.assign(Auth, {
     img = img || '';
     if (img && (!/^data:image\/jpeg;base64,/.test(img) || img.length > 700000)) return { error: 'La imagen no es válida o es demasiado grande.' };
     if (!texto && !img) return { error: 'Escribe algo o agrega una imagen.' };
-    const d = { uid: u.uid, autor: u.displayName || Auth.profile?.nombre || 'Usuario', tipo, texto, img, ms: Date.now(), likes: [], nCom: 0 };
+    const d = { uid: u.uid, autor: myName(u), tipo, texto, img, ms: Date.now(), likes: [], nCom: 0, oran: [] };
     if (tipo === 'historia') d.expira = d.ms + 864e5;
     if (tipo === 'intencion') {
       if (!CATS.includes(cat)) return { error: 'Elige el tipo de intención.' };
@@ -218,7 +218,7 @@ Object.assign(Auth, {
     if (!u) return { error: 'Inicia sesión primero.' };
     texto = String(texto || '').trim().slice(0, 300);
     if (!texto) return { error: 'Escribe un comentario.' };
-    const d = { uid: u.uid, autor: u.displayName || Auth.profile?.nombre || 'Usuario', texto, ms: Date.now() };
+    const d = { uid: u.uid, autor: myName(u), texto, ms: Date.now() };
     try {
       const r = await F.addDoc(F.collection(F.db, 'publicaciones', id, 'comentarios'), d);
       F.updateDoc(F.doc(F.db, 'publicaciones', id), { nCom: F.increment(1) }).catch(() => {});
@@ -236,13 +236,12 @@ Object.assign(Auth, {
   },
 
   // ── Perfiles ajenos, seguidores y notificaciones ──
+  // Tarjeta pública: nombre y foto de cada persona (colección "publico", más lo que ya hubiera en "usuarios").
   async userInfo(uid) {
     if (!F) return {};
-    try {
-      const s = await F.getDoc(F.doc(F.db, COLLECTION, uid));
-      const v = s.exists() ? s.data() : {};
-      return { nombre: v.nombre || '', foto: v.foto || '', fotoG: v.fotoG || '', tipo: v.tipo || '' };
-    } catch (e) { return {}; }
+    const rd = async col => { try { const s = await F.getDoc(F.doc(F.db, col, uid)); return s.exists() ? s.data() : {}; } catch (e) { return {}; } };
+    const [pu, us] = await Promise.all([rd('publico'), rd(COLLECTION)]);
+    return { nombre: pu.nombre || us.nombre || '', foto: pu.foto || us.foto || '', fotoG: pu.fotoG || us.fotoG || '', tipo: us.tipo || '' };
   },
 
   async follows(uid) {
@@ -262,7 +261,7 @@ Object.assign(Auth, {
     const u = F.auth.currentUser;
     if (!u) return { error: 'Inicia sesión primero.' };
     if (u.uid === target) return { error: 'No puedes seguirte a ti mismo.' };
-    const yo = u.displayName || Auth.profile?.nombre || 'Usuario', ms = Date.now();
+    const yo = myName(u), ms = Date.now();
     try {
       const a = F.doc(F.db, COLLECTION, target, 'seguidores', u.uid), b = F.doc(F.db, COLLECTION, u.uid, 'siguiendo', target);
       if (on) {
@@ -279,7 +278,7 @@ Object.assign(Auth, {
     const u = F.auth.currentUser;
     if (!u || to === u.uid) return;
     try {
-      await F.addDoc(F.collection(F.db, COLLECTION, to, 'notifs'), { tipo, de: u.uid, nombre: u.displayName || Auth.profile?.nombre || 'Usuario', post: post || '', ms: Date.now(), leido: false });
+      await F.addDoc(F.collection(F.db, COLLECTION, to, 'notifs'), { tipo, de: u.uid, nombre: myName(u), post: post || '', ms: Date.now(), leido: false });
     } catch (e) { /* una notificación fallida no debe romper la acción */ }
   },
 
@@ -308,14 +307,20 @@ Object.assign(Auth, {
     }, () => {});
   },
 
-  // Guarda la foto de Google en tu perfil para que otras personas la vean (solo si ya completaste el registro).
-  async syncFotoG() {
+  // Publica tu nombre y tu foto de Google para que otras personas los vean (no toca tu perfil de registro).
+  async syncPublic() {
     const u = F && F.auth.currentUser;
-    if (!u || !u.photoURL || !Auth.profile || !Auth.profile.tipo || Auth.profile.fotoG === u.photoURL) return;
-    try {
-      await F.setDoc(F.doc(F.db, COLLECTION, u.uid), { fotoG: u.photoURL }, { merge: true });
-      Auth.profile = { ...Auth.profile, fotoG: u.photoURL };
-    } catch (e) { /* no es crítico */ }
+    if (!u) return;
+    try { await F.setDoc(F.doc(F.db, 'publico', u.uid), { nombre: myName(u), fotoG: u.photoURL || '', ms: Date.now() }, { merge: true }); } catch (e) { /* no es crítico */ }
+  },
+
+  // Unirse en oración a una intención
+  async join(id, on) {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { error: 'Inicia sesión primero.' };
+    try { await F.updateDoc(F.doc(F.db, 'publicaciones', id), { oran: on ? F.arrayUnion(u.uid) : F.arrayRemove(u.uid) }); return { ok: true }; }
+    catch (e) { return fail(e); }
   },
 
   async logout() { if (F) await F.signOut(F.auth); }
