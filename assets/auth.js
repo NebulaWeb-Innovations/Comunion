@@ -124,6 +124,53 @@ Object.assign(Auth, {
     } catch (e) { return fail(e); }
   },
 
+  // ── Perfil: foto, publicaciones, historias e intenciones (se guardan en Firestore) ──
+  async setPhoto(dataUrl) {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { error: 'Inicia sesión primero.' };
+    if (typeof dataUrl !== 'string' || !/^data:image\/jpeg;base64,/.test(dataUrl) || dataUrl.length > 300000) return { error: 'La imagen no es válida o es demasiado grande.' };
+    try {
+      await F.setDoc(F.doc(F.db, COLLECTION, u.uid), { foto: dataUrl }, { merge: true });
+      Auth.profile = { ...(Auth.profile || {}), foto: dataUrl };
+      return { ok: true };
+    } catch (e) { return fail(e); }
+  },
+
+  async publish({ tipo, texto, img }) {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { error: 'Inicia sesión primero.' };
+    if (!['post', 'intencion', 'historia'].includes(tipo)) return { error: 'Tipo de publicación no válido.' };
+    texto = String(texto || '').trim().slice(0, 500);
+    img = img || '';
+    if (img && (!/^data:image\/jpeg;base64,/.test(img) || img.length > 700000)) return { error: 'La imagen no es válida o es demasiado grande.' };
+    if (!texto && !img) return { error: 'Escribe algo o agrega una imagen.' };
+    const d = { uid: u.uid, autor: u.displayName || Auth.profile?.nombre || 'Usuario', tipo, texto, img, ms: Date.now() };
+    if (tipo === 'historia') d.expira = d.ms + 864e5;
+    try {
+      const r = await F.addDoc(F.collection(F.db, 'publicaciones'), { ...d, creado: F.serverTimestamp() });
+      return { ok: true, item: { id: r.id, ...d } };
+    } catch (e) { return fail(e); }
+  },
+
+  async mine() {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { items: [] };
+    try {
+      const s = await F.getDocs(F.query(F.collection(F.db, 'publicaciones'), F.where('uid', '==', u.uid)));
+      const items = s.docs.map(x => { const v = x.data(); return { id: x.id, tipo: v.tipo, texto: v.texto || '', img: v.img || '', ms: v.ms || 0, expira: v.expira || 0 }; });
+      items.sort((a, b) => b.ms - a.ms);
+      return { items };
+    } catch (e) { return { ...fail(e), items: [] }; }
+  },
+
+  async remove(id) {
+    if (!F) return NOCFG;
+    try { await F.deleteDoc(F.doc(F.db, 'publicaciones', id)); return { ok: true }; } catch (e) { return fail(e); }
+  },
+
   async logout() { if (F) await F.signOut(F.auth); }
 });
 
