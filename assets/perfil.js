@@ -6,7 +6,7 @@
   const safeImg = s => /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(s || '') ? s : '';
   const ic = (n, k = 'w-4 h-4') => `<i data-lucide="${n}" class="${k}"></i>`;
   const A = () => window.Auth;
-  const PF = { items: [], loaded: false, uid: null };
+  const PF = { items: [], loaded: false, uid: null, feedItems: [], wall: [], fLoaded: false, shown: 10, open: new Set(), cm: {} };
   window.PF = PF;
   const upd = () => dispatchEvent(new Event('pf-update'));
   const say = t => {
@@ -27,14 +27,53 @@
     const r = await a.mine();
     if (r.error) say(r.error);
     PF.items = r.items || []; PF.loaded = true; upd();
+    PF.loadCommunity();
+  };
+
+  // Publicaciones e intenciones de toda la comunidad
+  PF.loadCommunity = async () => {
+    const a = A();
+    if (!a || !a.user) return;
+    const [po, wa] = await Promise.all([a.list('post'), a.list('intencion')]);
+    if (po.error) say(po.error);
+    PF.feedItems = po.items || []; PF.wall = wa.items || []; PF.fLoaded = true; upd();
   };
   addEventListener('authchange', PF.load);
   if (A() && A().ready) PF.load();
 
   PF.add = async (tipo, texto, img) => {
     const r = await A().publish({ tipo, texto, img });
-    if (r.ok) { PF.items.unshift(r.item); upd(); }
+    if (r.ok) {
+      PF.items.unshift(r.item);
+      if (tipo === 'post') PF.feedItems.unshift(r.item);
+      if (tipo === 'intencion') PF.wall.unshift(r.item);
+      upd();
+    }
     return r;
+  };
+
+  // ── Sección "Publicaciones" del inicio ──
+  PF.feed = () => {
+    const a = A() || {}, u = a.user;
+    const head = `<div class="flex items-center justify-between"><h2 class="font-display text-xl">Publicaciones</h2><span class="flex gap-2"><button data-pf="refrescar" aria-label="Actualizar" class="rounded-full border px-3 py-1.5 text-sm">${ic('refresh-cw')}</button><button data-pf="nuevo-post" class="inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-4 py-1.5 text-sm font-semibold">${ic('image-plus')} Publicar</button></span></div>`;
+    if (!u) return head + '<p class="text-sm text-muted-foreground">Inicia sesión para ver las publicaciones.</p>';
+    if (!PF.fLoaded) return head + '<p class="text-sm text-muted-foreground">Cargando publicaciones…</p>';
+    const card = i => {
+      const likes = i.likes || [], liked = likes.includes(u.uid), open = PF.open.has(i.id), cm = PF.cm[i.id], id = esc(i.id);
+      return `<article class="bg-card rounded-2xl border overflow-hidden">
+        <div class="flex items-center gap-3 p-4"><div class="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-primary font-display text-lg">${esc((i.autor || 'U')[0].toUpperCase())}</div><div class="flex-1 min-w-0"><p class="text-sm font-semibold truncate">${esc(i.autor)}</p><p class="text-xs text-muted-foreground">${fecha(i.ms)}</p></div>${i.uid === u.uid ? `<button data-pf="borrar" data-id="${id}" class="text-xs text-muted-foreground underline">Eliminar</button>` : ''}</div>
+        ${i.img ? `<img src="${safeImg(i.img)}" alt="" class="w-full block">` : ''}
+        ${i.texto ? `<p class="px-4 pt-3 text-base leading-relaxed whitespace-pre-wrap">${esc(i.texto)}</p>` : ''}
+        <div class="flex items-center gap-5 px-4 py-3">
+          <button data-pf="like" data-id="${id}" aria-pressed="${liked}" class="inline-flex items-center gap-1.5 text-sm ${liked ? 'text-primary font-semibold' : 'text-muted-foreground'}">${ic('heart', liked ? 'w-5 h-5 fill-current' : 'w-5 h-5')} ${likes.length}</button>
+          <button data-pf="coment" data-id="${id}" class="inline-flex items-center gap-1.5 text-sm text-muted-foreground">${ic('message-circle', 'w-5 h-5')} ${i.nCom || 0}</button>
+        </div>
+        ${open ? `<div class="border-t px-4 py-3 space-y-3">${cm === undefined ? '<p class="text-xs text-muted-foreground">Cargando…</p>' : cm.map(c => `<p class="text-sm"><span class="font-semibold">${esc(c.autor)}</span> · ${esc(c.texto)}${c.uid === u.uid ? ` <button data-pf="borrar-c" data-id="${id}" data-c="${esc(c.id)}" class="text-xs text-muted-foreground underline ml-1">Eliminar</button>` : ''}</p>`).join('')}<div class="flex gap-2"><input data-cin="${id}" maxlength="300" placeholder="Escribe un comentario…" class="flex-1 h-10 rounded-md border bg-transparent px-3 text-sm"><button data-pf="comentar" data-id="${id}" class="rounded-full bg-primary text-primary-foreground px-4 text-sm font-semibold">Enviar</button></div></div>` : ''}
+      </article>`;
+    };
+    const list = PF.feedItems.slice(0, PF.shown);
+    return head + (list.length ? list.map(card).join('') : '<p class="text-sm text-muted-foreground">Aún no hay publicaciones. ¡Sé la primera persona en publicar!</p>')
+      + (PF.feedItems.length > PF.shown ? '<button data-pf="mas" class="w-full rounded-full border py-2.5 text-sm font-medium">Ver más</button>' : '');
   };
 
   // ── Vista del perfil (la usa app.js) ──
@@ -169,17 +208,59 @@
   async function borrar(id) {
     const r = await A().remove(id);
     if (r.error) return say(r.error);
-    PF.items = PF.items.filter(x => x.id !== id); upd(); say('Eliminado');
+    PF.items = PF.items.filter(x => x.id !== id);
+    PF.feedItems = PF.feedItems.filter(x => x.id !== id);
+    PF.wall = PF.wall.filter(x => x.id !== id);
+    upd(); say('Eliminado');
   }
+  const findPost = id => PF.feedItems.find(x => x.id === id);
+
+  async function enviarComentario(id) {
+    const inp = [...document.querySelectorAll('[data-cin]')].find(x => x.dataset.cin === id);
+    const txt = inp ? inp.value.trim() : '';
+    if (!txt) return;
+    inp.disabled = true;
+    const r = await A().comment(id, txt);
+    if (r.error) { say(r.error); inp.disabled = false; return; }
+    (PF.cm[id] = PF.cm[id] || []).push(r.item);
+    const it = findPost(id); if (it) it.nCom = (it.nCom || 0) + 1;
+    upd();
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.dataset && e.target.dataset.cin) { e.preventDefault(); enviarComentario(e.target.dataset.cin); }
+  });
 
   document.addEventListener('click', async e => {
     const t = e.target.closest('[data-pf]'); if (!t) return;
-    const k = t.dataset.pf;
+    const k = t.dataset.pf, id = t.dataset.id;
     if (k === 'foto') pick('foto');
     else if (k === 'nuevo-post') pick('post');
     else if (k === 'nuevo-historia') pick('historia');
-    else if (k === 'ver') viewer(t.dataset.id);
-    else if (k === 'borrar') { if (confirm('¿Eliminar esta intención?')) borrar(t.dataset.id); }
+    else if (k === 'ver') viewer(id);
+    else if (k === 'borrar') { if (confirm('¿Eliminar esto?')) borrar(id); }
+    else if (k === 'refrescar') { PF.fLoaded = false; upd(); PF.loadCommunity(); }
+    else if (k === 'mas') { PF.shown += 10; upd(); }
+    else if (k === 'like') {
+      const it = findPost(id), uid = A().user.uid; if (!it) return;
+      const had = (it.likes || []).includes(uid);
+      it.likes = had ? it.likes.filter(x => x !== uid) : [...(it.likes || []), uid]; upd();
+      const r = await A().like(id, !had);
+      if (r.error) { it.likes = had ? [...it.likes, uid] : it.likes.filter(x => x !== uid); upd(); say(r.error); }
+    }
+    else if (k === 'coment') {
+      if (PF.open.has(id)) { PF.open.delete(id); return upd(); }
+      PF.open.add(id); upd();
+      if (!PF.cm[id]) { const r = await A().comments(id); if (r.error) say(r.error); PF.cm[id] = r.items || []; upd(); }
+    }
+    else if (k === 'comentar') enviarComentario(id);
+    else if (k === 'borrar-c') {
+      const r = await A().removeComment(id, t.dataset.c);
+      if (r.error) return say(r.error);
+      PF.cm[id] = (PF.cm[id] || []).filter(x => x.id !== t.dataset.c);
+      const it = findPost(id); if (it) it.nCom = Math.max(0, (it.nCom || 0) - 1);
+      upd();
+    }
     else if (k === 'salir') { await A().logout(); }   // guard.js te lleva a login.html al cambiar la sesión
   });
 })();
