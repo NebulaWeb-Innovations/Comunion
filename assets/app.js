@@ -1,55 +1,3 @@
-document.addEventListener('DOMContentLoaded', () => {
-  const btnCambiarFoto = document.getElementById('btn-cambiar-foto');
-  const inputFoto = document.getElementById('input-foto');
-  const fotoPerfil = document.getElementById('foto-perfil');
-
-  // 1. Al hacer clic en el botón, simular un clic en el input de archivo oculto
-  if (btnCambiarFoto && inputFoto) {
-    btnCambiarFoto.addEventListener('click', () => {
-      inputFoto.click();
-    });
-  }
-
-  // 2. Escuchar cuando el usuario seleccione un archivo
-  if (inputFoto) {
-    inputFoto.addEventListener('change', (event) => {
-      const file = event.target.files[0];
-      
-      if (file) {
-        // Validar que sea una imagen
-        if (!file.type.startsWith('image/')) {
-          alert('Por favor, selecciona un archivo de imagen válido.');
-          return;
-        }
-
-        // Leer el archivo localmente
-        const reader = new FileReader();
-        
-        reader.onload = (e) => {
-          // Actualizar la previsualización en el HTML
-          fotoPerfil.src = e.target.result;
-          
-          // NOTA SOBRE PERSISTENCIA:
-          // Aquí debes agregar la lógica para subir 'file' a tu base de datos o almacenamiento.
-          // Si estás usando Firebase (como en tu proyecto Ethos), aquí usarías Firebase Storage:
-          // subirImagenAFirebaseStorage(file);
-        };
-        
-        reader.readAsDataURL(file);
-      }
-    });
-  }
-});
-
-// Función de ejemplo para cargar datos básicos tras el login con Google
-function cargarDatosUsuario(usuarioAutenticado) {
-  document.getElementById('nombre-usuario').textContent = usuarioAutenticado.displayName || 'Usuario';
-  document.getElementById('email-usuario').textContent = usuarioAutenticado.email;
-  
-  if (usuarioAutenticado.photoURL) {
-    document.getElementById('foto-perfil').src = usuarioAutenticado.photoURL;
-  }
-}
 const dm=matchMedia('(prefers-color-scheme: dark)');
 const applyTheme=()=>document.documentElement.classList.toggle('dark',dm.matches);applyTheme();dm.addEventListener('change',applyTheme);
 
@@ -119,7 +67,7 @@ const sec=(show,h,i,arr,f,cls)=>show?`<section><h2 class="font-display text-xl m
 return sec(t=='all'||t=='grupos','Grupos de oración','users',cs,circleCard)+sec(t=='all'||t=='parroquias','Parroquias','church',ps,parishCard)+sec(t=='all'||t=='actividades','Actividades','calendar',as,actCard)};
 const dir=()=>`<div class="flex-1 min-w-0 flex justify-center"><div class="w-full max-w-4xl px-4 py-6 lg:py-10 pb-24 lg:pb-10"><div class="lg:hidden mb-4"><h1 class="font-display text-2xl">Directorio</h1></div><div class="hidden lg:block mb-6"><h1 class="font-display text-3xl">Directorio parroquial</h1><p class="text-sm text-muted-foreground mt-1">Busca grupos de oración, parroquias y actividades cercanas a ti.</p></div><div class="flex gap-2 mb-4"><div class="relative flex-1"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">${ic('search')}</span><input id="q" value="${esc(S.q)}" placeholder="Buscar por nombre, ciudad o dirección..." class="w-full h-10 rounded-md border bg-card pl-9 pr-3 text-sm"></div><button data-act="loc" class="shrink-0 inline-flex items-center gap-2 h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium">${ic('navigation')}<span class="hidden sm:inline">Cerca de mí</span></button></div><div class="inline-flex rounded-md bg-secondary p-1 mb-5 text-sm">${[['all','Todo'],['grupos','Grupos'],['parroquias','Parroquias'],['actividades','Actividades']].map(([k,l])=>`<button data-tab="${k}" class="px-3 py-1.5 rounded-sm font-medium ${S.tab==k?'bg-card shadow-sm text-foreground':'text-muted-foreground'}">${l}</button>`).join('')}</div><div id="res" class="space-y-8">${dirRes()}</div></div></div>`;
 
-const profile=()=>`<div class="flex-1 min-w-0 flex justify-center"><div class="w-full max-w-2xl px-4 py-6 lg:py-10 pb-24 lg:pb-10"><div class="bg-card rounded-2xl border p-6 text-center"><div class="w-20 h-20 mx-auto rounded-full bg-secondary flex items-center justify-center text-primary font-display text-4xl">I</div><h1 class="font-display text-2xl mt-3">Invitado</h1><p class="text-sm text-muted-foreground">Miembro de la comunidad Comunión</p></div><div class="grid grid-cols-3 gap-3 mt-4">${[['Oraciones',S.joined.size],['Testimonios',S.testimonies.length],['Círculos',S.myc||0]].map(([l,n])=>`<div class="bg-card rounded-2xl border p-4 text-center"><p class="font-display text-3xl gold-text">${n}</p><p class="text-xs text-muted-foreground mt-1">${l}</p></div>`).join('')}</div></div></div>`;
+const profile=()=>window.PF?PF.view():'';
 
 const modal=()=>{if(!S.modal)return '';const k=S.modal,cfg={prayer:['Pedir oración','Tu intención','Publicar intención',0],testimony:['Compartir testimonio','Cuéntanos qué hizo el Señor en tu vida','Publicar testimonio',1],circle:['Iniciar Rosario','Nombre y descripción del círculo','Crear círculo',1]}[k];
 return `<div class="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" data-act="close"><div class="bg-card rounded-2xl border w-full max-w-md p-6" onclick="event.stopPropagation()"><h2 class="font-display text-2xl mb-4">${cfg[0]}</h2>${k!='prayer'?'<input id="mt" class="w-full h-10 rounded-md border bg-transparent px-3 text-sm mb-3" placeholder="Título o nombre">':''}<textarea id="mx" rows="4" class="w-full rounded-md border bg-transparent p-3 text-sm" placeholder="${cfg[1]}"></textarea><div class="flex justify-end gap-2 mt-4"><button data-act="close" class="rounded-full border px-5 py-2 text-sm font-medium">Cancelar</button><button data-act="submit" class="rounded-full bg-primary text-primary-foreground px-5 py-2 text-sm font-semibold">${cfg[2]}</button></div></div></div>`};
@@ -139,9 +87,10 @@ if(d.act=='addc'){const v=document.getElementById('cin').value.trim();if(v){(S.c
 if(d.act=='speak'){if(!('speechSynthesis' in window)){S.comments=true;return render()}if(S.playing){speechSynthesis.cancel();S.playing=false}else{const u=new SpeechSynthesisUtterance(S.reflection.title+'. '+S.reflection.text);u.lang='es-ES';u.onend=u.onerror=()=>{S.playing=false;render()};speechSynthesis.speak(u);S.playing=true}render()}
 if(d.act=='loc')toast('Ubicación disponible solo en la app instalada')
 if(d.act=='submit'){const x=document.getElementById('mx').value.trim(),ti=document.getElementById('mt')?.value.trim(),k=S.modal;if(!x)return;const id=Date.now();
-if(k=='prayer')S.prayers.unshift({id,author:'Invitado',cat:'otros',text:x,n:0});
-if(k=='testimony')S.testimonies.unshift({id,author:'Invitado',title:ti||'Mi testimonio',text:x});
+if(k=='prayer'){S.prayers.unshift({id,author:window.Auth?.user?.nombre||'Invitado',cat:'otros',text:x,n:0});window.PF?.add('intencion',x).then(r=>{if(r&&r.error)toast(r.error)})}
+if(k=='testimony')S.testimonies.unshift({id,author:window.Auth?.user?.nombre||'Invitado',title:ti||'Mi testimonio',text:x});
 if(k=='circle')S.circles.unshift({id,name:ti||'Nuevo rosario',cat:'rosario',desc:x,time:'Por definir',n:1,city:''});
 S.modal=null;render();toast('Publicado en la comunidad')}});
 document.addEventListener('input',e=>{if(e.target.id=='q'){S.q=e.target.value;document.getElementById('res').innerHTML=dirRes();lucide.createIcons()}});
+addEventListener('pf-update',()=>{if(S.page=='perfil')render()});
 addEventListener('hashchange',go);go();
