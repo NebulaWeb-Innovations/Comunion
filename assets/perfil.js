@@ -6,7 +6,7 @@
   const safeImg = s => /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(s || '') ? s : '';
   const ic = (n, k = 'w-4 h-4') => `<i data-lucide="${n}" class="${k}"></i>`;
   const A = () => window.Auth;
-  const PF = { items: [], loaded: false, uid: null, feedItems: [], wall: [], fLoaded: false, shown: 10, open: new Set(), cm: {}, users: {}, notifs: [], bellOpen: false, wallNew: false, vu: null, fol: { seg: [], sig: [] }, unsub: [], sub: null };
+  const PF = { items: [], loaded: false, uid: null, feedItems: [], wall: [], fLoaded: false, shown: 10, open: new Set(), cm: {}, users: {}, notifs: [], bellOpen: false, wallNew: false, vu: null, fol: { seg: [], sig: [] }, unsub: [], sub: null, hist: [], q: '', sres: null };
   window.PF = PF;
   const upd = () => dispatchEvent(new Event('pf-update'));
   const say = t => {
@@ -50,6 +50,18 @@
     return okId(uid) ? `<a href="#${me && uid === me.uid ? 'perfil' : 'u-' + uid}" data-pf="irperfil" class="font-semibold hover:underline">${esc(nombre)}</a>` : `<span class="font-semibold">${esc(nombre)}</span>`;
   };
   PF.who = who;
+  const idBio = uid => {
+    const u = PF.users[uid] || {};
+    return (u.username ? `<p class="text-sm text-muted-foreground">@${esc(u.username)}</p>` : '') + (u.bio ? `<p class="text-sm mt-2 whitespace-pre-wrap">${esc(u.bio)}</p>` : '');
+  };
+  async function avisar(item) {
+    const a = A(); if (!a || !a.user) return;
+    try {
+      const f = await a.follows(a.user.uid);
+      const nt = item.tipo === 'historia' ? 'historia' : (item.sub === 'testimonio' ? 'testimonio' : 'post');
+      f.seg.slice(0, 200).forEach(x => a.notify(x.uid, { tipo: nt, post: item.id }));
+    } catch (e) { /* no es crítico */ }
+  }
   PF.avatar = avatar;
   const statsRow = (np, ns, ng, w) => `<div class="grid grid-cols-3 gap-3 mt-4">${[['Publicaciones', np, ''], ['Seguidores', ns, 'seg'], ['Seguidos', ng, 'sig']].map(([l, n, k]) => {
     const tag = k ? 'button' : 'div', at = k ? ` data-pf="lista" data-k="${k}" data-w="${w}"` : '';
@@ -83,7 +95,7 @@
   function stop() {
     PF.unsub.forEach(f => { try { f(); } catch (e) {} });
     PF.unsub = []; PF.sub = null; PF.notifs = []; PF.wall = []; PF.wallNew = false; PF.bellOpen = false;
-    PF.fol = { seg: [], sig: [] }; PF.users = {}; PF.feedItems = []; PF.fLoaded = false; PF.cm = {}; PF.open = new Set(); PF.vu = null;
+    PF.fol = { seg: [], sig: [] }; PF.hist = []; PF.users = {}; PF.feedItems = []; PF.fLoaded = false; PF.cm = {}; PF.open = new Set(); PF.vu = null;
   }
   function start() {
     const a = A();
@@ -106,7 +118,11 @@
     PF.uid = a.user.uid; PF.loaded = false; upd();
     const r = await a.mine();
     if (r.error) say(r.error);
-    PF.items = r.items || []; PF.loaded = true; upd();
+    PF.items = r.items || [];
+    const venc = i => i.tipo === 'historia' && i.expira && i.expira < Date.now();
+    PF.items.filter(venc).forEach(i => a.remove(i.id));   // limpia tus historias vencidas
+    PF.items = PF.items.filter(i => !venc(i));
+    PF.loaded = true; upd();
     PF.loadCommunity();
   };
 
@@ -114,9 +130,9 @@
   PF.loadCommunity = async () => {
     const a = A();
     if (!a || !a.user) return;
-    const po = await a.list('post');
+    const [po, hi] = await Promise.all([a.list('post'), a.list('historia')]);
     if (po.error) say(po.error);
-    PF.feedItems = po.items || []; PF.fLoaded = true; upd();
+    PF.feedItems = po.items || []; PF.hist = hi.items || []; PF.fLoaded = true; upd();
     PF.loadUsers(PF.feedItems.slice(0, PF.shown + 10).map(i => i.uid));
   };
   const boot = () => { start(); PF.load(); };
@@ -140,6 +156,8 @@
     if (r.ok) {
       PF.items.unshift(r.item);
       if (tipo === 'post') PF.feedItems.unshift(r.item);
+      if (tipo === 'historia') PF.hist.unshift(r.item);
+      if (tipo === 'post' || tipo === 'historia') avisar(r.item);   // las intenciones no avisan
       upd();
     }
     return r;
@@ -179,6 +197,7 @@
     const foto = safeImg((PF.users[u.uid] || {}).foto) || safeImg(p.foto) || (/^https:\/\//.test(u.photo || '') ? u.photo : '');
     const now = Date.now();
     const posts = PF.items.filter(i => i.tipo === 'post');
+    const rol = (PF.users[u.uid] || {}).tipo || p.tipo || 'laico';
     const ints = PF.items.filter(i => i.tipo === 'intencion');
     const hist = PF.items.filter(i => i.tipo === 'historia' && i.expira > now);
     const btn = (k, i, t, cls) => `<button data-pf="${k}" class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold ${cls}">${ic(i)} ${t}</button>`;
@@ -192,11 +211,13 @@
           <button data-pf="foto" aria-label="Cambiar foto de perfil" class="absolute -bottom-1 -right-1 w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow">${ic('camera')}</button>
         </div>
         <h1 class="font-display text-2xl mt-3">${esc(nombre)}</h1>
-        <p class="text-sm text-muted-foreground">${esc(u.email)}</p>
-        ${TIPO[p.tipo] ? `<span class="inline-block mt-2 text-xs px-3 py-1 rounded-full bg-secondary text-muted-foreground">${TIPO[p.tipo]}</span>` : ''}
+        ${idBio(u.uid)}
+        <p class="text-xs text-muted-foreground mt-1">${esc(u.email)}</p>
+        ${TIPO[rol] ? `<span class="inline-block mt-2 text-xs px-3 py-1 rounded-full bg-secondary text-muted-foreground">${TIPO[rol]}</span>` : ''}
         <div class="flex flex-wrap justify-center gap-2 mt-5">
           ${btn('nuevo-post', 'image-plus', 'Publicar', 'bg-primary text-primary-foreground')}
           ${btn('nuevo-historia', 'circle-plus', 'Historia', 'bg-accent/15 text-accent-foreground')}
+          ${btn('editar', 'pencil', 'Editar perfil', 'border')}
           ${btn('salir', 'log-out', 'Cerrar sesión', 'border')}
         </div>
       </div>
@@ -235,7 +256,8 @@
       <div class="bg-card rounded-2xl border p-6 text-center mt-3">
         ${avatar(vu.uid, nombre, 'w-24 h-24 mx-auto', true)}
         <h1 class="font-display text-2xl mt-3">${esc(nombre)}</h1>
-        ${TIPO[vu.info && vu.info.tipo] ? `<span class="inline-block mt-2 text-xs px-3 py-1 rounded-full bg-secondary text-muted-foreground">${TIPO[vu.info.tipo]}</span>` : ''}
+        ${idBio(vu.uid)}
+        <span class="inline-block mt-2 text-xs px-3 py-1 rounded-full bg-secondary text-muted-foreground">${TIPO[(vu.info && vu.info.tipo) || 'laico'] || 'Laico'}</span>
         <div class="mt-5"><button data-pf="seguir" class="rounded-full px-7 py-2 text-sm font-semibold ${sigo ? 'border' : 'bg-primary text-primary-foreground'}">${sigo ? 'Siguiendo' : 'Seguir'}</button></div>
       </div>
       ${statsRow(posts.length, vu.seg.length, vu.sig.length, 'vu')}
@@ -254,13 +276,14 @@
     const a = A();
     if (!a || !a.user) return '';
     const n = PF.notifs.filter(x => !x.leido).length;
-    const TXT = { follow: 'empezó a seguirte', comment: 'comentó tu publicación', oracion: 'se unió en oración a tu intención', reply: 'respondió en una publicación donde comentaste' };
+    const TXT = { follow: 'empezó a seguirte', comment: 'comentó tu publicación', oracion: 'se unió en oración a tu intención', post: 'publicó algo nuevo', historia: 'subió una historia', testimonio: 'compartió un testimonio', reply: 'respondió en una publicación donde comentaste' };
     const panel = PF.bellOpen ? `<div class="absolute right-0 mt-2 w-80 max-w-[calc(100vw-1.5rem)] bg-card border rounded-2xl shadow-xl max-h-[70vh] overflow-y-auto">
         <p class="font-display text-lg px-4 py-3 border-b">Notificaciones</p>
         ${PF.notifs.length ? PF.notifs.map(x => `<div class="flex items-center gap-3 px-4 py-3 border-b ${x.leido ? '' : 'bg-primary/5'}">${avatar(x.de, x.nombre, 'w-9 h-9')}<p class="text-sm flex-1 min-w-0">${who(x.de, x.nombre)} ${esc(TXT[x.tipo] || '')}</p><span class="text-xs text-muted-foreground shrink-0">${rel(x.ms)}</span></div>`).join('') : '<p class="text-sm text-muted-foreground px-4 py-6 text-center">No tienes notificaciones.</p>'}
       </div>` : '';
-    return `<div class="fixed z-40 right-3" style="top:calc(.75rem + env(safe-area-inset-top,0px))">
+    return `<div class="fixed z-40 right-3 flex items-start gap-2" style="top:calc(.75rem + env(safe-area-inset-top,0px))">
       ${PF.bellOpen ? '<div data-pf="bell-close" class="fixed inset-0"></div>' : ''}
+      <a href="#buscar" aria-label="Buscar personas" class="w-11 h-11 rounded-full bg-card border shadow flex items-center justify-center">${ic('search', 'w-5 h-5')}</a>
       <button data-pf="bell" aria-label="Notificaciones${n ? ' (' + n + ' sin leer)' : ''}" class="relative w-11 h-11 rounded-full bg-card border shadow flex items-center justify-center"><span class="${n ? 'bell-wiggle' : 'inline-flex'}">${ic('bell', 'w-5 h-5')}</span>${n ? '<span class="absolute top-1.5 right-2 w-3 h-3 rounded-full bg-red-500 border-2 border-card"></span>' : ''}</button>
       ${panel}</div>`;
   };
@@ -274,6 +297,115 @@
     document.body.appendChild(ov);
     ov.onclick = e => { if (e.target === ov || e.target.closest('[data-x],a')) ov.remove(); };
   }
+
+  // ── Historias de las personas que sigues ──
+  const seenS = () => { try { return JSON.parse(localStorage.getItem('cp_story_seen') || '[]'); } catch (e) { return []; } };
+  const markS = id => { const l = seenS(); if (!l.includes(id)) { l.push(id); try { localStorage.setItem('cp_story_seen', JSON.stringify(l.slice(-300))); } catch (e) {} } };
+  PF.storiesBar = () => {
+    const a = A(), me = a && a.user;
+    if (!me || !PF.fLoaded) return '';
+    const now = Date.now(), sig = new Set(PF.fol.sig.map(x => x.uid)), seen = seenS(), by = {};
+    PF.hist.forEach(i => { if (i.expira > now && (sig.has(i.uid) || i.uid === me.uid)) (by[i.uid] = by[i.uid] || []).push(i); });
+    const mine = by[me.uid]; delete by[me.uid];
+    const g = Object.entries(by).map(([uid, l]) => ({ uid, nombre: l[0].autor, unseen: l.some(i => !seen.includes(i.id)), last: Math.max(...l.map(i => i.ms)) }))
+      .sort((x, y) => (y.unseen - x.unseen) || (y.last - x.last));
+    const circle = (uid, nombre, ring, attr, plus) => `<button ${attr} class="shrink-0 w-[72px] text-center"><span class="relative block w-16 h-16 mx-auto rounded-full p-[3px] ${ring}">${avatar(uid, nombre, 'w-full h-full')}${plus ? `<span class="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">${ic('plus', 'w-3 h-3')}</span>` : ''}</span><span class="block text-xs mt-1 truncate">${esc(nombre)}</span></button>`;
+    const miaNueva = mine && mine.some(i => !seen.includes(i.id));
+    return `<div class="mt-4"><h2 class="font-display text-xl mb-2">Historias</h2><div class="flex gap-3 overflow-x-auto pb-1">
+      ${mine ? circle(me.uid, 'Tu historia', miaNueva ? 'bg-accent' : 'bg-border', `data-pf="story" data-uid="${esc(me.uid)}"`, false) : circle(me.uid, 'Tu historia', 'bg-border', 'data-pf="nuevo-historia"', true)}
+      ${g.map(x => circle(x.uid, x.nombre, x.unseen ? 'bg-accent' : 'bg-border', `data-pf="story" data-uid="${esc(x.uid)}"`, false)).join('')}
+    </div>${g.length ? '' : '<p class="text-xs text-muted-foreground mt-1">Cuando las personas que sigues suban historias, aparecerán aquí.</p>'}</div>`;
+  };
+
+  function openStories(uid) {
+    const me = A().user, now = Date.now();
+    const list = PF.hist.filter(i => i.uid === uid && i.expira > now).sort((x, y) => x.ms - y.ms);
+    if (!list.length) return;
+    let k = 0, timer = null;
+    const ov = document.createElement('div');
+    ov.className = 'fixed inset-0 z-[85] bg-black flex items-center justify-center';
+    document.body.appendChild(ov);
+    const close = () => { clearTimeout(timer); ov.remove(); upd(); };
+    const next = () => { if (k < list.length - 1) { k++; show(); } else close(); };
+    function show() {
+      const i = list[k]; markS(i.id);
+      ov.innerHTML = `<div class="relative w-full max-w-sm h-full flex flex-col bg-black text-white" style="max-height:100dvh">
+        <div class="flex gap-1 px-3" style="padding-top:calc(.75rem + env(safe-area-inset-top,0px))">${list.map((_, n) => `<span class="h-1 flex-1 rounded-full ${n <= k ? 'bg-white' : 'bg-white/30'}"></span>`).join('')}</div>
+        <div class="flex items-center gap-3 px-3 py-3">${avatar(uid, i.autor, 'w-9 h-9')}<div class="flex-1 min-w-0"><p class="text-sm font-semibold truncate">${esc(i.autor)}</p><p class="text-xs text-white/70">${rel(i.ms)}</p></div>${uid === me.uid ? '<button data-s="del" class="text-xs underline mr-3">Eliminar</button>' : ''}<button data-s="x" aria-label="Cerrar" class="text-2xl leading-none px-1">×</button></div>
+        <div class="relative flex-1 min-h-0 flex items-center justify-center"><img src="${safeImg(i.img)}" alt="" class="max-w-full max-h-full object-contain"><button data-s="prev" aria-label="Anterior" class="absolute inset-y-0 left-0 w-1/3"></button><button data-s="next" aria-label="Siguiente" class="absolute inset-y-0 right-0 w-1/3"></button></div>
+        ${i.texto ? `<p class="px-4 py-4 text-sm text-center">${esc(i.texto)}</p>` : '<div class="h-6"></div>'}</div>`;
+      clearTimeout(timer); timer = setTimeout(next, 6000);
+    }
+    ov.onclick = async e => {
+      const b = e.target.closest('[data-s]'); if (!b) return;
+      const ac = b.dataset.s;
+      if (ac === 'x') close();
+      else if (ac === 'next') next();
+      else if (ac === 'prev') { k = Math.max(0, k - 1); show(); }
+      else if (ac === 'del' && confirm('¿Quitar esta historia?')) { clearTimeout(timer); await borrar(list[k].id); ov.remove(); }
+    };
+    show();
+  }
+
+  // ── Editar perfil: @usuario, biografía y rol ──
+  function editProfile() {
+    const me = A().user, u = PF.users[me.uid] || {};
+    const rol = u.tipo || (A().profile || {}).tipo || 'laico';
+    const ov = document.createElement('div');
+    ov.className = 'fixed inset-0 z-[80] bg-black/70 flex items-center justify-center p-4';
+    ov.innerHTML = `<div class="bg-card rounded-2xl border w-full max-w-sm p-5 max-h-[94vh] overflow-y-auto" role="dialog" aria-modal="true"><h2 class="font-display text-2xl mb-4">Editar perfil</h2>
+      <label class="text-xs text-muted-foreground" for="ep-u">Usuario</label>
+      <div class="flex items-center rounded-md border px-3 h-10 mb-3"><span class="text-muted-foreground mr-1">@</span><input id="ep-u" maxlength="20" autocapitalize="none" autocomplete="off" class="flex-1 bg-transparent text-sm outline-none" value="${esc(u.username || '')}"></div>
+      <label class="text-xs text-muted-foreground" for="ep-b">Biografía</label>
+      <textarea id="ep-b" maxlength="160" rows="3" class="w-full rounded-md border bg-transparent p-3 text-sm" placeholder="Cuéntanos algo breve sobre ti">${esc(u.bio || '')}</textarea>
+      <p class="text-xs text-muted-foreground text-right mb-3"><span id="ep-n">0</span>/160</p>
+      <label class="text-xs text-muted-foreground" for="ep-r">Rol</label>
+      <select id="ep-r" class="w-full h-10 rounded-md border bg-card text-foreground px-3 text-sm">${Object.entries(TIPO).map(([k, v]) => `<option value="${k}" ${k === rol ? 'selected' : ''}>${v}</option>`).join('')}</select>
+      <p id="ep-e" class="text-xs text-red-500 min-h-[1rem] mt-2"></p>
+      <div class="flex justify-end gap-2 mt-3"><button data-x="no" class="rounded-full border px-5 py-2 text-sm font-medium">Cancelar</button><button data-x="ok" class="rounded-full bg-primary text-primary-foreground px-5 py-2 text-sm font-semibold">Guardar</button></div></div>`;
+    document.body.appendChild(ov);
+    const bio = ov.querySelector('#ep-b'), cnt = ov.querySelector('#ep-n');
+    bio.oninput = () => { cnt.textContent = bio.value.length; }; bio.oninput();
+    ov.onclick = async e => {
+      const x = e.target.closest('[data-x]');
+      if (e.target === ov || (x && x.dataset.x === 'no')) return ov.remove();
+      if (!x) return;
+      x.disabled = true; x.textContent = 'Guardando…';
+      const r = await A().saveMyProfile({ username: ov.querySelector('#ep-u').value, bio: bio.value, tipo: ov.querySelector('#ep-r').value });
+      if (r.error) { ov.querySelector('#ep-e').textContent = r.error; x.disabled = false; x.textContent = 'Guardar'; return; }
+      PF.users[me.uid] = { ...(PF.users[me.uid] || {}), username: r.username, bio: r.bio, tipo: r.tipo };
+      ov.remove(); say('Perfil actualizado'); upd();
+    };
+  }
+
+  // ── Buscar perfiles por @usuario o por nombre ──
+  const sresHtml = () => {
+    if (PF.sres === null) return '<p class="text-sm text-muted-foreground">Escribe un nombre o un @usuario (mínimo 2 letras).</p>';
+    if (!PF.sres.length) return '<p class="text-sm text-muted-foreground">No encontramos perfiles con esa búsqueda.</p>';
+    const me = A().user;
+    return PF.sres.map(r => `<a href="#${r.uid === me.uid ? 'perfil' : 'u-' + esc(r.uid)}" class="flex items-center gap-3 bg-card border rounded-2xl p-3 hover:border-primary/30">${avatar(r.uid, r.nombre, 'w-12 h-12')}<span class="flex-1 min-w-0"><span class="block text-sm font-semibold truncate">${esc(r.nombre || 'Usuario')}</span>${r.username ? `<span class="block text-xs text-muted-foreground">@${esc(r.username)}</span>` : ''}</span><span class="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">${TIPO[r.tipo] || 'Laico'}</span></a>`).join('');
+  };
+  PF.searchView = () => {
+    const me = (A() || {}).user;
+    const wrap = body => `<div class="flex-1 min-w-0 flex justify-center"><div class="w-full max-w-2xl px-4 py-6 lg:py-10 pb-24 lg:pb-10">${body}</div></div>`;
+    if (!me) return wrap('<div class="text-center mt-10"><p class="text-sm text-muted-foreground mb-4">Inicia sesión para buscar personas.</p><a href="login.html?next=index.html" class="inline-flex items-center rounded-full bg-primary text-primary-foreground px-6 py-2.5 text-sm font-semibold">Iniciar sesión</a></div>');
+    return wrap(`<h1 class="font-display text-3xl mb-4">Buscar</h1><input id="qs" type="search" autocomplete="off" value="${esc(PF.q)}" placeholder="Busca por nombre o @usuario" class="w-full h-12 rounded-full border bg-card px-5 text-sm"><div id="sres" class="space-y-2 mt-4">${sresHtml()}</div>`);
+  };
+  let tq = null;
+  document.addEventListener('input', e => {
+    if (e.target.id !== 'qs') return;
+    clearTimeout(tq);
+    const v = e.target.value.trim();
+    tq = setTimeout(async () => {
+      PF.q = v;
+      const show = () => { const el = document.getElementById('sres'); if (el) el.innerHTML = sresHtml(); };
+      if (v.length < 2) { PF.sres = null; return show(); }
+      const r = await A().searchUsers(v);
+      if (PF.q !== v) return;
+      r.forEach(x => { PF.users[x.uid] = x; });
+      PF.sres = r; show();
+    }, 350);
+  });
 
   // ── Selector de imagen (galería del celular o archivos del PC) ──
   let inp = null;
@@ -373,6 +505,7 @@
     PF.items = PF.items.filter(x => x.id !== id);
     PF.feedItems = PF.feedItems.filter(x => x.id !== id);
     PF.wall = PF.wall.filter(x => x.id !== id);
+    PF.hist = PF.hist.filter(x => x.id !== id);
     upd(); say('Eliminado');
   }
   const findPost = id => PF.feedItems.find(x => x.id === id);
@@ -453,6 +586,8 @@
       const r = await A().follow(vu.uid, nombre, on);
       if (r.error) { vu.seg = antes[0]; PF.fol.sig = antes[1]; upd(); say(r.error); }
     }
+    else if (k === 'editar') editProfile();
+    else if (k === 'story') openStories(t.dataset.uid);
     else if (k === 'salir') { await A().logout(); }   // guard.js te lleva a login.html al cambiar la sesión
   });
 })();

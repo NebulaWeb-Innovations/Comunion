@@ -18,6 +18,15 @@ service cloud.firestore {
         && (!('foto' in request.resource.data) || request.resource.data.foto.size() < 300000);
     }
 
+    // @usuarios únicos: el id del documento es el @usuario y guarda a quién pertenece.
+    match /usernames/{h} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && h.matches('^[a-z0-9_]{3,20}$');
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+    }
+
     // Seguidores / seguidos: solo tú creas tus propias relaciones.
     match /usuarios/{uid}/seguidores/{fid} {
       allow read: if request.auth != null;

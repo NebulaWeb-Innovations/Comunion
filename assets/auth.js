@@ -242,7 +242,7 @@ Object.assign(Auth, {
     if (!F) return {};
     const rd = async col => { try { const s = await F.getDoc(F.doc(F.db, col, uid)); return s.exists() ? s.data() : {}; } catch (e) { return {}; } };
     const [pu, us] = await Promise.all([rd('publico'), rd(COLLECTION)]);
-    return { nombre: pu.nombre || us.nombre || '', foto: pu.foto || us.foto || '', fotoG: pu.fotoG || us.fotoG || '', tipo: us.tipo || '' };
+    return { nombre: pu.nombre || us.nombre || '', foto: pu.foto || us.foto || '', fotoG: pu.fotoG || us.fotoG || '', tipo: pu.rol || us.tipo || 'laico', bio: pu.bio || '', username: pu.username || '' };
   },
 
   async follows(uid) {
@@ -308,11 +308,84 @@ Object.assign(Auth, {
     }, () => {});
   },
 
-  // Publica tu nombre y tu foto de Google para que otras personas los vean (no toca tu perfil de registro).
+  // Publica tu nombre, tu foto de Google y (si no tienes) un @usuario, para que otras personas te encuentren.
   async syncPublic() {
     const u = F && F.auth.currentUser;
     if (!u) return;
-    try { await F.setDoc(F.doc(F.db, 'publico', u.uid), { nombre: myName(u), fotoG: u.photoURL || '', ms: Date.now() }, { merge: true }); } catch (e) { /* no es crítico */ }
+    const nombre = myName(u);
+    try {
+      const ref = F.doc(F.db, 'publico', u.uid);
+      const cur = (await F.getDoc(ref)).data() || {};
+      await F.setDoc(ref, { nombre, nombreLower: nombre.toLowerCase(), fotoG: u.photoURL || '', ms: Date.now() }, { merge: true });
+      if (!cur.username) await Auth.autoUsername(nombre);
+    } catch (e) { /* no es crítico */ }
+  },
+
+  // Reserva un @usuario único en la colección "usernames" (id = usuario, uid = dueño).
+  async autoUsername(nombre) {
+    const u = F && F.auth.currentUser;
+    if (!u) return '';
+    let base = String(nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 14);
+    if (base.length < 3) base = (base + 'user').slice(0, 14);
+    for (let i = 0; i < 6; i++) {
+      const cand = i ? base + Math.floor(100 + Math.random() * 9000) : base;
+      try {
+        if ((await F.getDoc(F.doc(F.db, 'usernames', cand))).exists()) continue;
+        const b = F.writeBatch(F.db);
+        b.set(F.doc(F.db, 'usernames', cand), { uid: u.uid, ms: Date.now() });
+        b.set(F.doc(F.db, 'publico', u.uid), { username: cand }, { merge: true });
+        await b.commit();
+        return cand;
+      } catch (e) { /* probamos con otro */ }
+    }
+    return '';
+  },
+
+  // Editar perfil: @usuario, biografía y rol.
+  async saveMyProfile({ username, bio, tipo }) {
+    if (!F) return NOCFG;
+    const u = F.auth.currentUser;
+    if (!u) return { error: 'Inicia sesión primero.' };
+    if (!TIPOS.includes(tipo)) return { error: 'Elige un rol válido.' };
+    username = String(username || '').trim().toLowerCase().replace(/^@/, '');
+    if (!/^[a-z0-9_]{3,20}$/.test(username)) return { error: 'El @usuario debe tener de 3 a 20 caracteres: letras, números o guion bajo.' };
+    bio = String(bio || '').trim().slice(0, 160);
+    try {
+      const ref = F.doc(F.db, 'publico', u.uid);
+      const old = ((await F.getDoc(ref)).data() || {}).username || '';
+      if (username !== old) {
+        const t = await F.getDoc(F.doc(F.db, 'usernames', username));
+        if (t.exists() && t.data().uid !== u.uid) return { error: 'Ese @usuario ya está en uso. Prueba con otro.' };
+      }
+      const b = F.writeBatch(F.db);
+      if (username !== old) {
+        b.set(F.doc(F.db, 'usernames', username), { uid: u.uid, ms: Date.now() });
+        if (old) b.delete(F.doc(F.db, 'usernames', old));
+      }
+      const nombre = myName(u);
+      b.set(ref, { username, bio, rol: tipo, nombre, nombreLower: nombre.toLowerCase() }, { merge: true });
+      await b.commit();
+      if (Auth.profile && Auth.profile.tipo !== tipo) {
+        await F.setDoc(F.doc(F.db, COLLECTION, u.uid), { tipo }, { merge: true });
+        Auth.profile = { ...Auth.profile, tipo };
+      }
+      return { ok: true, username, bio, tipo };
+    } catch (e) { return fail(e); }
+  },
+
+  // Buscar perfiles por @usuario (prefijo) o por nombre (prefijo).
+  async searchUsers(q) {
+    if (!F) return [];
+    const raw = String(q || '').trim().toLowerCase();
+    const soloUser = raw.startsWith('@');
+    const h = raw.replace(/^@/, '').replace(/[^a-z0-9_]/g, '');
+    const uids = new Set(), jobs = [];
+    if (h.length >= 2) jobs.push(F.getDocs(F.query(F.collection(F.db, 'usernames'), F.where(F.documentId(), '>=', h), F.where(F.documentId(), '<=', h + '\uf8ff'), F.limit(10)))
+      .then(s => s.docs.forEach(d => d.data().uid && uids.add(d.data().uid))).catch(() => {}));
+    if (!soloUser && raw.length >= 2) jobs.push(F.getDocs(F.query(F.collection(F.db, 'publico'), F.where('nombreLower', '>=', raw), F.where('nombreLower', '<=', raw + '\uf8ff'), F.limit(10)))
+      .then(s => s.docs.forEach(d => uids.add(d.id))).catch(() => {}));
+    await Promise.all(jobs);
+    return Promise.all([...uids].slice(0, 15).map(async uid => ({ uid, ...(await Auth.userInfo(uid)) })));
   },
 
   // Unirse en oración a una intención
