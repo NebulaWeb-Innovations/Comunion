@@ -18,6 +18,19 @@
   const fecha = ms => new Date(ms).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
   const TIPO = { laico: 'Laico', sacerdote: 'Sacerdote', religioso: 'Religioso' };
   const CATL = { gratitud: 'Gratitud', familia: 'Familia', sanacion: 'Sanación', vocacion: 'Vocación', otros: 'Intención' };
+  // Colores del tipo de intención (los de siempre; para "Otro" se reconoce la palabra o se elige un color estable)
+  const CATC = { gratitud: 'bg-amber-50 text-amber-700', familia: 'bg-sky-50 text-sky-700', sanacion: 'bg-rose-50 text-rose-700', vocacion: 'bg-violet-50 text-violet-700', trabajo: 'bg-emerald-50 text-emerald-700', fe: 'bg-indigo-50 text-indigo-700' };
+  const PAL = ['bg-emerald-50 text-emerald-700', 'bg-indigo-50 text-indigo-700', 'bg-teal-50 text-teal-700', 'bg-orange-50 text-orange-700', 'bg-fuchsia-50 text-fuchsia-700', 'bg-cyan-50 text-cyan-700'];
+  PF.catStyle = (cat, txt) => {
+    const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    if (cat === 'otros' && txt) {
+      const k = norm(txt);
+      if (CATC[k]) return [txt, CATC[k]];
+      let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+      return [txt, PAL[h % PAL.length]];
+    }
+    return [CATL[cat] || 'Intención', CATC[cat] || 'bg-amber-50 text-amber-700'];
+  };
   const catLabel = i => (i.cat === 'otros' && i.catTxt) ? i.catTxt : (CATL[i.cat] || 'Intención');
   const okId = s => /^[A-Za-z0-9]{6,60}$/.test(s || '');
   const rel = ms => { const s = Math.max(1, Math.floor((Date.now() - ms) / 1000)); if (s < 60) return 'ahora'; const m = Math.floor(s / 60); if (m < 60) return m + ' min'; const h = Math.floor(m / 60); return h < 24 ? h + ' h' : Math.floor(h / 24) + ' d'; };
@@ -141,8 +154,9 @@
     const card = i => {
       const likes = i.likes || [], liked = likes.includes(u.uid), open = PF.open.has(i.id), cm = PF.cm[i.id], id = esc(i.id);
       return `<article class="bg-card rounded-2xl border overflow-hidden">
-        <div class="flex items-center gap-3 p-4">${avatar(i.uid, i.autor, 'w-10 h-10')}<div class="flex-1 min-w-0"><p class="text-sm truncate">${who(i.uid, i.autor)}</p><p class="text-xs text-muted-foreground">${fecha(i.ms)}</p></div>${i.uid === u.uid ? `<button data-pf="borrar" data-id="${id}" class="text-xs text-muted-foreground underline">Eliminar</button>` : ''}</div>
+        <div class="flex items-center gap-3 p-4">${avatar(i.uid, i.autor, 'w-10 h-10')}<div class="flex-1 min-w-0"><p class="text-sm truncate">${who(i.uid, i.autor)}</p>${i.sub === 'testimonio' ? '<span class="inline-block mt-0.5 text-xs px-2 py-0.5 rounded-full bg-teal-50 text-teal-700" style="box-shadow:0 0 9px rgba(45,212,191,.55)">Testimonio</span>' : ''}<p class="text-xs text-muted-foreground">${fecha(i.ms)}</p></div>${i.uid === u.uid ? `<button data-pf="borrar" data-id="${id}" class="text-xs text-muted-foreground underline">Eliminar</button>` : ''}</div>
         ${i.img ? `<img src="${safeImg(i.img)}" alt="" class="w-full block">` : ''}
+        ${i.titulo ? `<h3 class="font-display text-xl px-4 pt-3 leading-snug">${esc(i.titulo)}</h3>` : ''}
         ${i.texto ? `<p class="px-4 pt-3 text-base leading-relaxed whitespace-pre-wrap">${esc(i.texto)}</p>` : ''}
         <div class="flex items-center gap-5 px-4 py-3">
           <button data-pf="like" data-id="${id}" aria-pressed="${liked}" class="inline-flex items-center gap-1.5 text-sm ${liked ? 'text-primary font-semibold' : 'text-muted-foreground'}">${ic('heart', liked ? 'w-5 h-5 fill-current' : 'w-5 h-5')} ${likes.length}</button>
@@ -168,9 +182,9 @@
     const ints = PF.items.filter(i => i.tipo === 'intencion');
     const hist = PF.items.filter(i => i.tipo === 'historia' && i.expira > now);
     const btn = (k, i, t, cls) => `<button data-pf="${k}" class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold ${cls}">${ic(i)} ${t}</button>`;
-    const tile = i => i.img
-      ? `<button data-pf="ver" data-id="${esc(i.id)}" class="aspect-[4/5] bg-secondary overflow-hidden"><img src="${safeImg(i.img)}" alt="" class="w-full h-full object-cover"></button>`
-      : `<button data-pf="ver" data-id="${esc(i.id)}" class="aspect-[4/5] bg-secondary p-3 text-left text-xs overflow-hidden">${esc(i.texto).slice(0, 140)}</button>`;
+    const tile = i => `<div class="relative aspect-[4/5] bg-secondary overflow-hidden">${i.img
+      ? `<button data-pf="ver" data-id="${esc(i.id)}" class="w-full h-full"><img src="${safeImg(i.img)}" alt="" class="w-full h-full object-cover"></button>`
+      : `<button data-pf="ver" data-id="${esc(i.id)}" class="w-full h-full p-3 text-left text-xs overflow-hidden">${esc(i.titulo || i.texto).slice(0, 140)}</button>`}<button data-pf="borrar" data-id="${esc(i.id)}" aria-label="Quitar publicación" class="absolute top-1.5 right-1.5 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center">${ic('trash-2', 'w-4 h-4')}</button></div>`;
     return wrap(`
       <div class="bg-card rounded-2xl border p-6 text-center">
         <div class="relative w-24 h-24 mx-auto">
@@ -192,7 +206,7 @@
       <h2 class="font-display text-xl mt-8 mb-3">Mis publicaciones</h2>
       ${posts.length ? `<div class="grid grid-cols-3 gap-1 rounded-2xl overflow-hidden">${posts.map(tile).join('')}</div>` : '<p class="text-sm text-muted-foreground">Aún no has publicado nada.</p>'}
       <h2 class="font-display text-xl mt-8 mb-3">Mis intenciones</h2>
-      ${ints.length ? `<div class="space-y-3">${ints.map(i => `<article class="bg-card rounded-2xl border p-4"><span class="inline-block text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground mb-2">${esc(catLabel(i))}</span><p class="text-sm">${esc(i.texto)}</p><div class="flex items-center justify-between mt-3"><span class="text-xs text-muted-foreground">${fecha(i.ms)}</span><button data-pf="borrar" data-id="${esc(i.id)}" class="text-xs text-muted-foreground underline">Eliminar</button></div></article>`).join('')}</div>` : '<p class="text-sm text-muted-foreground">Cuando pidas oración desde el inicio, tus intenciones aparecerán aquí.</p>'}`}`);
+      ${ints.length ? `<div class="space-y-3">${ints.map(i => `<article class="bg-card rounded-2xl border p-4"><span class="inline-block text-xs px-2 py-0.5 rounded-full ${PF.catStyle(i.cat, i.catTxt)[1]} mb-2">${esc(catLabel(i))}</span><p class="text-sm">${esc(i.texto)}</p><div class="flex items-center justify-between mt-3"><span class="text-xs text-muted-foreground">${fecha(i.ms)}</span><button data-pf="borrar" data-id="${esc(i.id)}" class="text-xs text-muted-foreground underline">Eliminar</button></div></article>`).join('')}</div>` : '<p class="text-sm text-muted-foreground">Cuando pidas oración desde el inicio, tus intenciones aparecerán aquí.</p>'}`}`);
   };
 
   // ── Perfil de otra persona (#u-UID) ──
@@ -263,13 +277,13 @@
 
   // ── Selector de imagen (galería del celular o archivos del PC) ──
   let inp = null;
-  function pick(kind) {
+  function pick(kind, cb) {
     if (!inp) {
       inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.hidden = true;
       document.body.appendChild(inp);
     }
     inp.value = '';
-    inp.onchange = () => { const f = inp.files && inp.files[0]; if (f) edit(f, kind); };
+    inp.onchange = () => { const f = inp.files && inp.files[0]; if (f) edit(f, kind, cb); };
     inp.click();
   }
 
@@ -279,7 +293,8 @@
     post: { w: 720, h: 900, t: 'Nueva publicación', cap: true, max: 220000 },
     historia: { w: 540, h: 960, t: 'Nueva historia', cap: true, max: 240000 }
   };
-  function edit(file, kind) {
+  PF.pickPhoto = cb => pick('post', cb);
+  function edit(file, kind, cb) {
     if (!file.type.startsWith('image/')) return say('Selecciona un archivo de imagen.');
     if (file.size > 25e6) return say('La imagen pesa demasiado (máximo 25 MB).');
     const sp = SPEC[kind], url = URL.createObjectURL(file), img = new Image();
@@ -293,8 +308,8 @@
         <canvas class="mx-auto rounded-xl touch-none bg-black" style="max-width:100%;max-height:52vh;cursor:grab"></canvas>
         <div class="flex items-center gap-3 mt-3"><label class="text-xs text-muted-foreground" for="pf-z">Zoom</label><input id="pf-z" type="range" min="1" max="3" step="0.01" value="1" class="flex-1"><button data-x="rot" class="rounded-full border px-3 py-1.5 text-sm" aria-label="Girar">↻</button></div>
         <p class="text-xs text-muted-foreground mt-1">Arrastra la imagen para encuadrarla.</p>
-        ${sp.cap ? '<textarea id="pf-c" maxlength="300" rows="2" class="w-full rounded-md border bg-transparent p-3 text-sm mt-3" placeholder="Escribe algo (opcional)"></textarea>' : ''}
-        <div class="flex justify-end gap-2 mt-4"><button data-x="no" class="rounded-full border px-5 py-2 text-sm font-medium">Cancelar</button><button data-x="ok" class="rounded-full bg-primary text-primary-foreground px-5 py-2 text-sm font-semibold">${kind === 'foto' ? 'Guardar foto' : 'Publicar'}</button></div></div>`;
+        ${sp.cap && !cb ? '<textarea id="pf-c" maxlength="300" rows="2" class="w-full rounded-md border bg-transparent p-3 text-sm mt-3" placeholder="Escribe algo (opcional)"></textarea>' : ''}
+        <div class="flex justify-end gap-2 mt-4"><button data-x="no" class="rounded-full border px-5 py-2 text-sm font-medium">Cancelar</button><button data-x="ok" class="rounded-full bg-primary text-primary-foreground px-5 py-2 text-sm font-semibold">${kind === 'foto' ? 'Guardar foto' : cb ? 'Usar foto' : 'Publicar'}</button></div></div>`;
       document.body.appendChild(ov);
       const cv = ov.querySelector('canvas'), cx = cv.getContext('2d');
       cv.width = sp.w; cv.height = sp.h; cv.style.aspectRatio = sp.w + '/' + sp.h; cv.style.width = kind === 'historia' ? '210px' : '100%';
@@ -322,6 +337,7 @@
         draw(false);
         let q = .86, data = cv.toDataURL('image/jpeg', q);
         while (data.length > sp.max && q > .4) { q -= .08; data = cv.toDataURL('image/jpeg', q); }
+        if (cb) { cb(data); close(); return; }
         const texto = (ov.querySelector('#pf-c')?.value || '').trim();
         let r;
         if (kind === 'foto') {
@@ -390,7 +406,7 @@
     else if (k === 'nuevo-post') pick('post');
     else if (k === 'nuevo-historia') pick('historia');
     else if (k === 'ver') viewer(id);
-    else if (k === 'borrar') { if (confirm('¿Eliminar esto?')) borrar(id); }
+    else if (k === 'borrar') { if (confirm('¿Quitar esto de la comunidad? Dejará de verse para todos y no se puede deshacer.')) borrar(id); }
     else if (k === 'refrescar') { PF.fLoaded = false; upd(); PF.loadCommunity(); }
     else if (k === 'mas') { PF.shown += 10; upd(); PF.loadUsers(PF.feedItems.slice(0, PF.shown).map(i => i.uid)); }
     else if (k === 'like') {

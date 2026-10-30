@@ -76,7 +76,7 @@ async function init() {
   }
 }
 
-const mapPub = x => { const v = x.data(); return { id: x.id, uid: v.uid, autor: v.autor || 'Usuario', tipo: v.tipo, texto: v.texto || '', img: v.img || '', ms: v.ms || 0, expira: v.expira || 0, likes: Array.isArray(v.likes) ? v.likes : [], nCom: v.nCom || 0, oran: Array.isArray(v.oran) ? v.oran : [], cat: v.cat || '', catTxt: v.catTxt || '' }; };
+const mapPub = x => { const v = x.data(); return { id: x.id, uid: v.uid, autor: v.autor || 'Usuario', tipo: v.tipo, texto: v.texto || '', img: v.img || '', ms: v.ms || 0, expira: v.expira || 0, likes: Array.isArray(v.likes) ? v.likes : [], nCom: v.nCom || 0, oran: Array.isArray(v.oran) ? v.oran : [], cat: v.cat || '', catTxt: v.catTxt || '', sub: v.sub || '', titulo: v.titulo || '' }; };
 const myName = u => u.displayName || Auth.profile?.nombre || (u.email || '').split('@')[0] || 'Usuario';
 const CATS = ['gratitud', 'familia', 'sanacion', 'vocacion', 'otros'];
 
@@ -140,7 +140,7 @@ Object.assign(Auth, {
     } catch (e) { return fail(e); }
   },
 
-  async publish({ tipo, texto, img, cat, catTxt }) {
+  async publish({ tipo, texto, img, cat, catTxt, sub, titulo }) {
     if (!F) return NOCFG;
     const u = F.auth.currentUser;
     if (!u) return { error: 'Inicia sesión primero.' };
@@ -160,6 +160,7 @@ Object.assign(Auth, {
         d.catTxt = catTxt;
       }
     }
+    if (tipo === 'post' && sub === 'testimonio') { d.sub = 'testimonio'; d.titulo = String(titulo || '').trim().slice(0, 80); }
     try {
       const r = await F.addDoc(F.collection(F.db, 'publicaciones'), { ...d, creado: F.serverTimestamp() });
       return { ok: true, item: { id: r.id, ...d } };
