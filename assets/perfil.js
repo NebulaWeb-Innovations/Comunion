@@ -136,7 +136,7 @@
   PF.feed = () => {
     const a = A() || {}, u = a.user;
     const head = `<div class="flex items-center justify-between"><h2 class="font-display text-xl">Publicaciones</h2><span class="flex gap-2"><button data-pf="refrescar" aria-label="Actualizar" class="rounded-full border px-3 py-1.5 text-sm">${ic('refresh-cw')}</button><button data-pf="nuevo-post" class="inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-4 py-1.5 text-sm font-semibold">${ic('image-plus')} Publicar</button></span></div>`;
-    if (!u) return head + '<p class="text-sm text-muted-foreground">Inicia sesión para ver las publicaciones.</p>';
+    if (!u) return head + '<p class="text-sm text-muted-foreground">Inicia sesión para ver las publicaciones. <a href="login.html?next=index.html" class="font-semibold underline">Iniciar sesión</a></p>';
     if (!PF.fLoaded) return head + '<p class="text-sm text-muted-foreground">Cargando publicaciones…</p>';
     const card = i => {
       const likes = i.likes || [], liked = likes.includes(u.uid), open = PF.open.has(i.id), cm = PF.cm[i.id], id = esc(i.id);
@@ -160,7 +160,7 @@
   PF.view = () => {
     const a = A() || {}, u = a.user, p = a.profile || {};
     const wrap = body => `<div class="flex-1 min-w-0 flex justify-center"><div class="w-full max-w-2xl px-4 py-6 lg:py-10 pb-24 lg:pb-10">${body}</div></div>`;
-    if (!u) return wrap('<p class="text-sm text-muted-foreground text-center">Inicia sesión para ver tu perfil.</p>');
+    if (!u) return wrap(`<div class="text-center mt-10"><p class="text-sm text-muted-foreground mb-4">Inicia sesión para ver tu perfil.</p><a href="login.html?next=index.html" class="inline-flex items-center rounded-full bg-primary text-primary-foreground px-6 py-2.5 text-sm font-semibold">Iniciar sesión</a></div>`);
     const nombre = u.nombre || p.nombre || (u.email || '').split('@')[0] || 'Usuario';
     const foto = safeImg((PF.users[u.uid] || {}).foto) || safeImg(p.foto) || (/^https:\/\//.test(u.photo || '') ? u.photo : '');
     const now = Date.now();
@@ -211,7 +211,7 @@
   PF.userView = () => {
     const a = A() || {}, me = a.user, vu = PF.vu;
     const wrap = body => `<div class="flex-1 min-w-0 flex justify-center"><div class="w-full max-w-2xl px-4 py-6 lg:py-10 pb-24 lg:pb-10">${body}</div></div>`;
-    if (!me) return wrap('<p class="text-sm text-muted-foreground text-center">Inicia sesión para ver este perfil.</p>');
+    if (!me) return wrap(`<div class="text-center mt-10"><p class="text-sm text-muted-foreground mb-4">Inicia sesión para ver este perfil.</p><a href="login.html?next=index.html" class="inline-flex items-center rounded-full bg-primary text-primary-foreground px-6 py-2.5 text-sm font-semibold">Iniciar sesión</a></div>`);
     const volver = '<a href="#inicio" class="text-sm text-muted-foreground">← Volver al inicio</a>';
     if (!vu || !vu.loaded) return wrap(volver + '<p class="text-sm text-muted-foreground mt-6 text-center">Cargando perfil…</p>');
     const nombre = (vu.info && vu.info.nombre) || (vu.items[0] && vu.items[0].autor) || ((PF.fol.sig.find(x => x.uid === vu.uid) || vu.seg.find(x => x.uid === vu.uid) || {}).nombre) || 'Usuario';
